@@ -4,8 +4,7 @@ services:
     ports:
       - "8090:8090"
     environment:
-      - DATABASE_URL=mysql://propartuser:cwG3e3n5K9KknrmKMlhj@127.0.0.1:3306/proparthub
-      - SECRET_KEY=your-secret-key-here
+      - .env
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
