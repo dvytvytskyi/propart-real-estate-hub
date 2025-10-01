@@ -9,6 +9,7 @@ hubspot-api-client==7.0.0
 Werkzeug==2.3.7
 phonenumbers==8.13.25
 psycopg2-binary==2.9.9
+PyMySQL==1.1.0
 alembic==1.12.1
 Flask-Limiter==3.5.0
 Flask-Bcrypt==1.0.1
