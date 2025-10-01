@@ -1,0 +1,65 @@
+════════════════════════════════════════════════════════════════
+🚀 ШВИДКІ КОМАНДИ ДЛЯ НАЛАШТУВАННЯ GUNICORN
+════════════════════════════════════════════════════════════════
+
+ВИКОНАЙТЕ НА СЕРВЕРІ ПО ЧЕРЗІ:
+
+# 1. Оновити код
+cd /var/www/propart
+git pull origin main
+
+# 2. Встановити PostgreSQL
+sudo apt install -y postgresql postgresql-contrib
+
+# 3. Налаштувати базу даних
+sudo -u postgres psql -c "CREATE USER propart_user WITH PASSWORD 'SecurePass123!';"
+sudo -u postgres psql -c "CREATE DATABASE real_estate_agents OWNER propart_user;"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE real_estate_agents TO propart_user;"
+
+# 4. Створити Python venv
+cd /var/www/propart
+python3 -m venv venv
+source venv/bin/activate
+
+# 5. Встановити залежності
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install gunicorn
+
+# 6. Створити .env файл
+cat > /var/www/propart/.env << 'EOF'
+SECRET_KEY=c5c143f7591aaf968a93e09d37f979b033ac0f0bcbd45b5c90fb68c71db11f60
+DEBUG=False
+FLASK_ENV=production
+DATABASE_URL=postgresql://propart_user:SecurePass123!@localhost/real_estate_agents
+HUBSPOT_API_KEY=your-key-here
+EOF
+
+# 7. Ініціалізувати базу даних
+source venv/bin/activate
+python setup.py
+
+# 8. Створити директорії для логів
+sudo mkdir -p /var/log/propart /var/run/propart
+sudo chown -R www-data:www-data /var/www/propart /var/log/propart /var/run/propart
+
+# 9. Налаштувати systemd service
+sudo cp propart.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable propart
+sudo systemctl start propart
+
+# 10. Перевірити статус
+sudo systemctl status propart
+
+════════════════════════════════════════════════════════════════
+✅ GUNICORN МАЄ ПРАЦЮВАТИ!
+════════════════════════════════════════════════════════════════
+
+Перевірте:
+curl -I http://localhost:8000
+
+Має показати: HTTP/1.1 302 або 200
+
+════════════════════════════════════════════════════════════════
+
