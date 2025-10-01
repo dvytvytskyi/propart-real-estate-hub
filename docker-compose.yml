@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   app:
     build: .
@@ -10,22 +8,5 @@ services:
       - SECRET_KEY=your-secret-key-here
     volumes:
       - ./logs:/app/logs
-    # depends_on:
-    #   - db
     restart: unless-stopped
-
-  # db:
-  #   image: mysql:8.0
-  #   environment:
-  #     MYSQL_ROOT_PASSWORD: rootpassword
-  #     MYSQL_DATABASE: proparthub
-  #     MYSQL_USER: propartuser
-  #     MYSQL_PASSWORD: cwG3e3n5K9KknrmKMlhj
-  #   ports:
-  #     - "3306:3306"
-  #   volumes:
-  #     - mysql_data:/var/lib/mysql
-  #   restart: unless-stopped
-
-volumes:
-  mysql_data:
+    network_mode: host
