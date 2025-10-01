@@ -26,4 +26,4 @@ RUN mkdir -p logs
 EXPOSE 8090
 
 # Команда запуску
-CMD ["gunicorn", "--bind", "0.0.0.0:8090", "--workers", "3", "--timeout", "120", "--access-logfile", "logs/access.log", "--error-logfile", "logs/error.log", "--log-level", "info", "wsgi:application"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8090", "--workers", "1", "--timeout", "120", "--access-logfile", "logs/access.log", "--error-logfile", "logs/error.log", "--log-level", "debug", "wsgi:application"]
