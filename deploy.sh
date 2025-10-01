@@ -35,8 +35,8 @@ apt-get upgrade -y
 
 echo -e "\n${YELLOW}Step 2: Installing required packages...${NC}"
 apt-get install -y \
-    python3.10 \
-    python3.10-venv \
+    python3 \
+    python3-venv \
     python3-pip \
     postgresql \
     postgresql-contrib \
@@ -64,7 +64,7 @@ cp -r . ${PROJECT_DIR}/
 cd ${PROJECT_DIR}
 
 echo -e "\n${YELLOW}Step 6: Creating Python virtual environment...${NC}"
-python3.10 -m venv ${VENV_DIR}
+python3 -m venv ${VENV_DIR}
 source ${VENV_DIR}/bin/activate
 
 echo -e "\n${YELLOW}Step 7: Installing Python dependencies...${NC}"
