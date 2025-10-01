@@ -1,0 +1,6 @@
+# HubSpot API Configuration
+HUBSPOT_API_KEY=your_hubspot_api_key_here
+
+# Flask Configuration
+FLASK_SECRET_KEY=your_secret_key_here
+FLASK_ENV=development

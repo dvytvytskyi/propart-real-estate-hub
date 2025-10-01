@@ -1,0 +1,363 @@
+{% extends "base.html" %}
+
+{% block title %}Дашборд - ProPart Real Estate Hub{% endblock %}
+
+{% block content %}
+{% set active_page = 'dashboard' %}
+{% include 'components/sidebar.html' %}
+
+<div class="main-content" id="mainContent">
+    <div class="main-header">
+        <div style="display: flex; align-items: center;">
+            <button class="sidebar-toggle d-md-none me-3" onclick="toggleSidebar()">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <i class="fas fa-chart-line" style="color: var(--sidebar-primary); font-size: 1.5rem;"></i>
+                <h1 class="mb-0">Дашборд</h1>
+            </div>
+        </div>
+        <div class="header-actions">
+            <a href="{{ url_for('add_lead') }}" class="btn btn-primary btn-sm">
+                <i class="fas fa-user-plus me-1"></i> Додати лід
+            </a>
+        </div>
+    </div>
+    
+    <div class="content-area">
+        <!-- Статистичні картки -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+            <div class="card stats-card">
+                <div class="card-body">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h4>{{ metrics.total_leads }}</h4>
+                            <p>Всього лідів</p>
+                        </div>
+                        <div>
+                            <i class="fas fa-users fa-2x" style="opacity: 0.8;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card stats-card success">
+                <div class="card-body">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h4>{{ metrics.active_leads }}</h4>
+                            <p>Активні ліди</p>
+                        </div>
+                        <div>
+                            <i class="fas fa-user-check fa-2x" style="opacity: 0.8;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card stats-card warning">
+                <div class="card-body">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h4>{{ metrics.closed_leads }}</h4>
+                            <p>Закриті угоди</p>
+                        </div>
+                        <div>
+                            <i class="fas fa-handshake fa-2x" style="opacity: 0.8;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card stats-card info">
+                <div class="card-body">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h4>{{ metrics.transferred_leads }}</h4>
+                            <p>Передані ліди</p>
+                        </div>
+                        <div>
+                            <i class="fas fa-share-alt fa-2x" style="opacity: 0.8;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- Список лідів -->
+        <div class="leads-table-container">
+            <div class="leads-table-header">
+                <div class="leads-table-title">
+                    <i class="fas fa-list-alt"></i>
+                    <h3>Останні ліди</h3>
+                </div>
+            </div>
+            
+            {% if leads %}
+            <div class="leads-table-wrapper">
+                <table class="leads-table">
+                    <thead>
+                        <tr>
+                            <th class="col-deal">
+                                <i class="fas fa-file-contract"></i>
+                                <span>Назва угоди</span>
+                            </th>
+                            <th class="col-agent">
+                                <i class="fas fa-user-tie"></i>
+                                <span>Відповідальний агент</span>
+                            </th>
+                            <th class="col-budget">
+                                <i class="fas fa-dollar-sign"></i>
+                                <span>Бюджет</span>
+                            </th>
+                            <th class="col-status">
+                                <i class="fas fa-info-circle"></i>
+                                <span>Статус</span>
+                            </th>
+                            <th class="col-updated">
+                                <i class="fas fa-clock"></i>
+                                <span>Останнє оновлення</span>
+                            </th>
+                            <th class="col-actions">
+                                <i class="fas fa-cogs"></i>
+                                <span>Дії</span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for lead in leads[:10] %}
+                        <tr class="lead-row">
+                            <td class="col-deal">
+                                <a href="{{ url_for('view_lead', lead_id=lead.id) }}" class="deal-name">
+                                    {{ lead.deal_name or 'Без назви' }}
+                                </a>
+                            </td>
+                            <td class="col-agent">
+                                <div class="agent-cell">
+                                    <i class="fas fa-user-circle"></i>
+                                    <span>{{ lead.client_name or 'Не вказано' }}</span>
+                                </div>
+                            </td>
+                            <td class="col-budget">
+                                {% if lead.budget %}
+                                    <span class="budget-value">{{ lead.budget }}</span>
+                                {% else %}
+                                    <span class="no-budget">Не вказано</span>
+                                {% endif %}
+                            </td>
+                            <td class="col-status">
+                                {% if lead.status == 'new' %}
+                                    <span class="status-badge new">
+                                        <i class="fas fa-circle"></i>
+                                        <span>Новий</span>
+                                    </span>
+                                {% elif lead.status == 'contacted' %}
+                                    <span class="status-badge contacted">
+                                        <i class="fas fa-phone"></i>
+                                        <span>На зв'язку</span>
+                                    </span>
+                                {% elif lead.status == 'qualified' %}
+                                    <span class="status-badge qualified">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span>Кваліфікований</span>
+                                    </span>
+                                {% elif lead.status == 'closed' %}
+                                    <span class="status-badge closed">
+                                        <i class="fas fa-handshake"></i>
+                                        <span>Закритий</span>
+                                    </span>
+                                {% else %}
+                                    <span class="status-badge default">
+                                        <i class="fas fa-question-circle"></i>
+                                        <span>{{ lead.status or 'Невідомо' }}</span>
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td class="col-updated">
+                                <div class="date-cell">
+                                    <i class="fas fa-calendar-alt"></i>
+                                    <span>
+                                        {% if lead.updated_at %}
+                                            {{ lead.updated_at.strftime('%d %B %Y %H:%M') }}
+                                        {% elif lead.created_at %}
+                                            {{ lead.created_at.strftime('%d %B %Y %H:%M') }}
+                                        {% else %}
+                                            Не вказано
+                                        {% endif %}
+                                    </span>
+                                </div>
+                            </td>
+                            <td class="col-actions">
+                                <div class="actions-cell">
+                                    <a href="{{ url_for('view_lead', lead_id=lead.id) }}" class="action-btn view" title="Переглянути">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <a href="{{ url_for('edit_lead', lead_id=lead.id) }}" class="action-btn edit" title="Редагувати">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    <button class="action-btn sync" onclick="syncLead({{ lead.id }})" title="Синхронізувати">
+                                        <i class="fas fa-sync-alt"></i>
+                                    </button>
+                                    <button class="action-btn delete" onclick="deleteLead({{ lead.id }})" title="Видалити">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-leads">
+                <div class="empty-icon">
+                    <i class="fas fa-inbox"></i>
+                </div>
+                <h4>Немає лідів</h4>
+                <p>Додайте перший лід, щоб почати роботу</p>
+                <a href="{{ url_for('add_lead') }}" class="btn-add-first">
+                    <i class="fas fa-plus"></i>
+                    <span>Додати лід</span>
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+// Sidebar toggle functionality
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const mainContent = document.getElementById('mainContent');
+    
+    // На мобільних пристроях показуємо/ховаємо sidebar
+    if (window.innerWidth <= 768) {
+        sidebar.classList.toggle('open');
+    } else {
+        // На десктопі згортаємо/розгортаємо sidebar
+        sidebar.classList.toggle('collapsed');
+        mainContent.classList.toggle('sidebar-collapsed');
+    }
+}
+
+// Refresh table functionality
+function refreshTable() {
+    location.reload();
+}
+
+// Sync functions
+function syncLead(leadId) {
+    fetch(`/sync_lead/${leadId}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', data.message);
+        } else {
+            showAlert('danger', data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('danger', 'Помилка при синхронізації');
+    });
+}
+
+function syncAllLeads() {
+    fetch('/sync_all_leads', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', data.message);
+            setTimeout(() => {
+                location.reload();
+            }, 2000);
+        } else {
+            showAlert('danger', data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('danger', 'Помилка при синхронізації');
+    });
+}
+
+function deleteLead(leadId) {
+    if (!confirm('Ви впевнені, що хочете видалити цей лід? Ця дія незворотна.')) {
+        return;
+    }
+    
+    fetch(`/delete_lead/${leadId}`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', data.message);
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+        } else {
+            showAlert('danger', data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('danger', 'Помилка при видаленні ліда');
+    });
+}
+
+function showAlert(type, message) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    const contentArea = document.querySelector('.content-area');
+    contentArea.insertBefore(alertDiv, contentArea.firstChild);
+    
+    setTimeout(() => {
+        alertDiv.remove();
+    }, 5000);
+}
+
+// Автоматична синхронізація кожні 30 секунд
+{% if current_user.role == 'admin' %}
+setInterval(function() {
+    console.log('Автоматична синхронізація з HubSpot...');
+    fetch('/sync_all_leads', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            console.log('✅ Синхронізація успішна:', data.message);
+            // Тихо перезавантажуємо дані без повідомлень
+            location.reload();
+        } else {
+            console.log('❌ Помилка синхронізації:', data.message);
+        }
+    })
+    .catch(error => {
+        console.error('❌ Помилка при синхронізації:', error);
+    });
+}, 30000); // 30 секунд
+{% endif %}
+</script>
+{% endblock %}

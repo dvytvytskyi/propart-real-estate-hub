@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Реєстрація - ProPart Real Estate Hub</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #3b82f6;
+            --primary-hover: #2563eb;
+            --text-color: #0f172a;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+            --background: #f8fafc;
+            --white: #ffffff;
+        }
+
+        body {
+            background-color: var(--background);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 1rem;
+        }
+        
+        .register-container {
+            background: var(--white);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+            width: 100%;
+            max-width: 360px;
+        }
+        
+        .register-header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .register-header i {
+            font-size: 1.5rem;
+            color: var(--primary-color);
+            margin-bottom: 0.75rem;
+        }
+        
+        .register-header h1 {
+            color: var(--text-color);
+            font-weight: 600;
+            font-size: 1.25rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .register-header p {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            margin: 0;
+        }
+        
+        .form-control {
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.875rem;
+            transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+        }
+        
+        .form-control:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+            outline: none;
+        }
+        
+        .form-label {
+            font-weight: 500;
+            color: var(--text-color);
+            font-size: 0.875rem;
+            margin-bottom: 0.375rem;
+        }
+        
+        .btn-primary {
+            background-color: var(--primary-color);
+            border: 1px solid var(--primary-color);
+            border-radius: 6px;
+            padding: 0.5rem 1rem;
+            font-weight: 500;
+            font-size: 0.875rem;
+            transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--primary-hover);
+            border-color: var(--primary-hover);
+        }
+        
+        .btn-outline-primary {
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            border-radius: 6px;
+            padding: 0.375rem 0.75rem;
+            font-weight: 500;
+            font-size: 0.875rem;
+            transition: all 0.15s ease-in-out;
+        }
+        
+        .btn-outline-primary:hover {
+            background-color: var(--background);
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+        
+        .alert {
+            border-radius: 6px;
+            border: none;
+            font-size: 0.875rem;
+            padding: 0.75rem;
+        }
+        
+        .text-danger {
+            color: #dc2626 !important;
+            font-size: 0.75rem;
+        }
+        
+        .login-link {
+            text-align: center;
+            margin-top: 1rem;
+        }
+        
+        .login-link a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        
+        .login-link a:hover {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        
+        .info-box {
+            background: rgba(59, 130, 246, 0.05);
+            border: 1px solid rgba(59, 130, 246, 0.1);
+            border-radius: 6px;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        
+        .info-box i {
+            color: var(--primary-color);
+        }
+        
+        .info-box p {
+            margin: 0;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            line-height: 1.4;
+        }
+
+        .mb-3 {
+            margin-bottom: 1rem !important;
+        }
+
+        .mb-4 {
+            margin-bottom: 1.5rem !important;
+        }
+
+        .w-100 {
+            width: 100% !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="register-container">
+        <div class="register-header">
+            <i class="fas fa-user-plus"></i>
+            <h1>Реєстрація</h1>
+            <p>Створіть новий акаунт</p>
+        </div>
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-danger" role="alert">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="info-box">
+            <div class="d-flex align-items-start">
+                <i class="fas fa-info-circle me-2 mt-1"></i>
+                <p>
+                    <strong>Примітка:</strong> Всі нові користувачі реєструються як агенти. 
+                    Адміністраторів можна створювати тільки через адмін-панель.
+                </p>
+            </div>
+        </div>
+
+        <form method="POST">
+            <div class="mb-3">
+                <label for="username" class="form-label">Ім'я користувача</label>
+                <input type="text" class="form-control" id="username" name="username" 
+                       value="{{ form.username.data or '' }}" required autocomplete="username">
+                {% if form.username.errors %}
+                    <div class="text-danger small mt-1">
+                        {% for error in form.username.errors %}
+                            {{ error }}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="mb-3">
+                <label for="email" class="form-label">Email</label>
+                <input type="email" class="form-control" id="email" name="email" 
+                       value="{{ form.email.data or '' }}" required autocomplete="email">
+                {% if form.email.errors %}
+                    <div class="text-danger small mt-1">
+                        {% for error in form.email.errors %}
+                            {{ error }}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="mb-3">
+                <label for="password" class="form-label">Пароль</label>
+                <input type="password" class="form-control" id="password" name="password" required autocomplete="new-password">
+                {% if form.password.errors %}
+                    <div class="text-danger small mt-1">
+                        {% for error in form.password.errors %}
+                            {{ error }}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="mb-4">
+                <label for="confirm_password" class="form-label">Підтвердіть пароль</label>
+                <input type="password" class="form-control" id="confirm_password" name="confirm_password" required autocomplete="new-password">
+                {% if form.confirm_password.errors %}
+                    <div class="text-danger small mt-1">
+                        {% for error in form.confirm_password.errors %}
+                            {{ error }}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+
+            <button type="submit" class="btn btn-primary w-100 mb-3">
+                Зареєструватися
+            </button>
+        </form>
+
+        <div class="login-link">
+            <a href="{{ url_for('login') }}">
+                Вже маєте акаунт? Увійти
+            </a>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+    // Обробка імені користувача
+    document.getElementById('username').addEventListener('input', function() {
+        let username = this.value;
+        
+        // Замінюємо пробіли на підкреслення
+        username = username.replace(/\s+/g, '_');
+        
+        // Перетворюємо на маленькі літери
+        username = username.toLowerCase();
+        
+        // Видаляємо недозволені символи (залишаємо тільки a-z, 0-9, _)
+        username = username.replace(/[^a-z0-9_]/g, '');
+        
+        // Оновлюємо значення поля
+        this.value = username;
+        
+        // Перевіряємо валідність
+        if (username.length > 0 && username[0].match(/[0-9]/)) {
+            this.setCustomValidity('Ім\'я користувача не може починатися з цифри');
+        } else if (username.length > 0 && !username.match(/^[a-z0-9_]+$/)) {
+            this.setCustomValidity('Ім\'я користувача може містити тільки маленькі літери, цифри та підкреслення');
+        } else {
+            this.setCustomValidity('');
+        }
+    });
+
+    // Перевірка співпадіння паролів
+    document.getElementById('confirm_password').addEventListener('input', function() {
+        const password = document.getElementById('password').value;
+        const confirmPassword = this.value;
+        
+        if (password !== confirmPassword) {
+            this.setCustomValidity('Паролі не співпадають');
+        } else {
+            this.setCustomValidity('');
+        }
+    });
+
+    document.getElementById('password').addEventListener('input', function() {
+        const confirmPassword = document.getElementById('confirm_password');
+        if (confirmPassword.value) {
+            confirmPassword.dispatchEvent(new Event('input'));
+        }
+    });
+    </script>
+</body>
+</html>

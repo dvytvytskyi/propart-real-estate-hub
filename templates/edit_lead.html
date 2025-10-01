@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+
+{% block title %}Редагування ліда - {{ lead.deal_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <i class="fas fa-edit"></i> Редагування ліда: {{ lead.deal_name }}
+    </h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <a href="{{ url_for('view_lead', lead_id=lead.id) }}" class="btn btn-secondary me-2">
+            <i class="fas fa-eye"></i> Перегляд
+        </a>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Назад до дашборду
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-user-edit"></i> Редагування інформації про лід
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="row">
+                        <!-- Основна інформація -->
+                        <div class="col-md-6">
+                            <h6 class="text-primary mb-3">
+                                <i class="fas fa-info-circle"></i> Основна інформація
+                            </h6>
+                            
+                            <div class="mb-3">
+                                <label for="deal_name" class="form-label">Deal name *</label>
+                                <input type="text" class="form-control" id="deal_name" name="deal_name" 
+                                       value="{{ form.deal_name.data or '' }}" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email *</label>
+                                <input type="email" class="form-control" id="email" name="email" 
+                                       value="{{ form.email.data or '' }}" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="phone" class="form-label">Номер телефону *</label>
+                                <input type="tel" class="form-control" id="phone" name="phone" 
+                                       value="{{ form.phone.data or '' }}" required placeholder="+380 XX XXX XX XX">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="budget" class="form-label">Бюджет</label>
+                                <select class="form-select" id="budget" name="budget">
+                                    {% for value, label in form.budget.choices %}
+                                        <option value="{{ value }}" {% if form.budget.data == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="status" class="form-label">Статус</label>
+                                <select class="form-select" id="status" name="status">
+                                    {% for value, label in form.status.choices %}
+                                        <option value="{{ value }}" {% if form.status.data == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="country" class="form-label">Країна покупки</label>
+                                <select class="form-select" id="country" name="country">
+                                    {% for value, label in form.country.choices %}
+                                        <option value="{{ value }}" {% if form.country.data == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="purchase_goal" class="form-label">Мета покупки</label>
+                                <select class="form-select" id="purchase_goal" name="purchase_goal">
+                                    {% for value, label in form.purchase_goal.choices %}
+                                        <option value="{{ value }}" {% if form.purchase_goal.data == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="property_type" class="form-label">Тип нерухомості</label>
+                                <select class="form-select" id="property_type" name="property_type">
+                                    {% for value, label in form.property_type.choices %}
+                                        <option value="{{ value }}" {% if form.property_type.data == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="object_type" class="form-label">Тип об'єкта</label>
+                                <select class="form-select" id="object_type" name="object_type">
+                                    {% for value, label in form.object_type.choices %}
+                                        <option value="{{ value }}" {% if form.object_type.data == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <!-- Додаткова інформація -->
+                        <div class="col-md-6">
+                            <h6 class="text-primary mb-3">
+                                <i class="fas fa-cog"></i> Додаткова інформація
+                            </h6>
+                            
+                            <div class="mb-3">
+                                <label for="communication_language" class="form-label">Мова спілкування</label>
+                                <select class="form-select" id="communication_language" name="communication_language">
+                                    {% for value, label in form.communication_language.choices %}
+                                        <option value="{{ value }}" {% if form.communication_language.data == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="source" class="form-label">Джерело привернення</label>
+                                <select class="form-select" id="source" name="source">
+                                    {% for value, label in form.source.choices %}
+                                        <option value="{{ value }}" {% if form.source.data == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="refusal_reason" class="form-label">Причина відмови</label>
+                                <select class="form-select" id="refusal_reason" name="refusal_reason">
+                                    {% for value, label in form.refusal_reason.choices %}
+                                        <option value="{{ value }}" {% if form.refusal_reason.data == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <h6 class="text-primary mb-3 mt-4">
+                                <i class="fas fa-address-book"></i> Контактні дані
+                            </h6>
+                            
+                            <div class="mb-3">
+                                <label for="company" class="form-label">Компанія</label>
+                                <input type="text" class="form-control" id="company" name="company" 
+                                       value="{{ form.company.data or '' }}">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="second_phone" class="form-label">Другий номер телефону</label>
+                                <input type="tel" class="form-control" id="second_phone" name="second_phone" 
+                                       value="{{ form.second_phone.data or '' }}" placeholder="+380 XX XXX XX XX">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="telegram_nickname" class="form-label">Нік в телеграмі</label>
+                                <input type="text" class="form-control" id="telegram_nickname" name="telegram_nickname" 
+                                       value="{{ form.telegram_nickname.data or '' }}" placeholder="@username">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="messenger" class="form-label">Месенджер</label>
+                                <select class="form-select" id="messenger" name="messenger">
+                                    {% for value, label in form.messenger.choices %}
+                                        <option value="{{ value }}" {% if form.messenger.data == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="birth_date" class="form-label">Дата народження</label>
+                                <input type="date" class="form-control" id="birth_date" name="birth_date" 
+                                       value="{{ form.birth_date.data or '' }}">
+                                <div class="form-text">Буде автоматично створюватися задача для привітання</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <hr>
+                    
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="btn btn-primary me-2">
+                            <i class="fas fa-save"></i> Зберегти зміни
+                        </button>
+                        <a href="{{ url_for('view_lead', lead_id=lead.id) }}" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Скасувати
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Форматування телефонних номерів
+    const phoneInputs = document.querySelectorAll('input[type="tel"]');
+    
+    phoneInputs.forEach(input => {
+        input.addEventListener('input', function() {
+            let value = this.value.replace(/\D/g, '');
+            
+            if (value.length > 0) {
+                if (value.startsWith('380')) {
+                    value = '+380 ' + value.substring(3);
+                } else if (value.startsWith('0')) {
+                    value = '+380 ' + value.substring(1);
+                } else if (!value.startsWith('+')) {
+                    value = '+380 ' + value;
+                }
+                
+                // Форматування
+                if (value.length > 7) {
+                    value = value.substring(0, 7) + ' ' + value.substring(7);
+                }
+                if (value.length > 11) {
+                    value = value.substring(0, 11) + ' ' + value.substring(11);
+                }
+                if (value.length > 16) {
+                    value = value.substring(0, 16) + ' ' + value.substring(16);
+                }
+            }
+            
+            this.value = value;
+        });
+    });
+    
+    // Валідація форми
+    const form = document.querySelector('form');
+    form.addEventListener('submit', function(e) {
+        const requiredFields = ['deal_name', 'email', 'phone'];
+        let isValid = true;
+        
+        requiredFields.forEach(fieldName => {
+            const field = document.getElementById(fieldName);
+            if (!field.value.trim()) {
+                field.classList.add('is-invalid');
+                isValid = false;
+            } else {
+                field.classList.remove('is-invalid');
+            }
+        });
+        
+        // Валідація email
+        const emailField = document.getElementById('email');
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (emailField.value && !emailRegex.test(emailField.value)) {
+            emailField.classList.add('is-invalid');
+            isValid = false;
+        }
+        
+        if (!isValid) {
+            e.preventDefault();
+            alert('Будь ласка, заповніть всі обов\'язкові поля правильно');
+        }
+    });
+});
+</script>
+{% endblock %}

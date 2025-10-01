@@ -1,0 +1,34 @@
+[Unit]
+Description=ProPart Real Estate Hub - Gunicorn
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+RuntimeDirectory=propart
+WorkingDirectory=/var/www/propart
+Environment="PATH=/var/www/propart/venv/bin"
+EnvironmentFile=/var/www/propart/.env
+ExecStart=/var/www/propart/venv/bin/gunicorn \
+          --config /var/www/propart/gunicorn_config.py \
+          --bind 127.0.0.1:8000 \
+          run:app
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+Restart=always
+RestartSec=10
+
+# Security
+NoNewPrivileges=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/propart /var/log/propart /var/run/propart
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+
+{% block title %}Верифікація - ProPart Real Estate Hub{% endblock %}
+
+{% block content %}
+{% set active_page = 'admin_verification' %}
+{% include 'components/sidebar.html' %}
+
+<div class="main-content" id="mainContent">
+    <div class="main-header">
+        <div style="display: flex; align-items: center;">
+            <button class="sidebar-toggle d-md-none me-3" onclick="toggleSidebar()">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <i class="fas fa-shield-alt" style="color: var(--sidebar-primary); font-size: 1.5rem;"></i>
+                <h1 class="mb-0">Верифікація агентів</h1>
+            </div>
+        </div>
+    </div>
+    
+    <div class="content-area">
+        <!-- Статистичні картки -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+            <div class="card stats-card">
+                <div class="card-body">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h4>{{ pending_requests|length }}</h4>
+                            <p>Очікують верифікації</p>
+                        </div>
+                        <div>
+                            <i class="fas fa-clock fa-2x" style="opacity: 0.8; color: #d7dade;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card stats-card">
+                <div class="card-body">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h4>{{ verified_agents|length }}</h4>
+                            <p>Верифіковані</p>
+                        </div>
+                        <div>
+                            <i class="fas fa-check-circle fa-2x" style="opacity: 0.8; color: #d7dade;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card stats-card">
+                <div class="card-body">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h4>{{ unverified_agents|length }}</h4>
+                            <p>Не верифіковані</p>
+                        </div>
+                        <div>
+                            <i class="fas fa-times-circle fa-2x" style="opacity: 0.8; color: #d7dade;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card stats-card">
+                <div class="card-body">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h4>{{ total_agents }}</h4>
+                            <p>Всього агентів</p>
+                        </div>
+                        <div>
+                            <i class="fas fa-users fa-2x" style="opacity: 0.8; color: #d7dade;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Запити на верифікацію -->
+        {% if pending_requests %}
+        <div class="form-container" style="margin-bottom: 2rem;">
+            <div class="form-header">
+                <div class="form-title">
+                    <i class="fas fa-clock"></i>
+                    <h3>Запити на верифікацію ({{ pending_requests|length }})</h3>
+                </div>
+            </div>
+            <div class="form-content">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Агент</th>
+                                <th>Email</th>
+                                <th>Дата запиту</th>
+                                <th>Статистика</th>
+                                <th style="text-align: center; width: 140px;">Дії</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for agent in pending_requests %}
+                            <tr>
+                                <td>
+                                    <div class="user-info">
+                                        <div class="user-avatar">
+                                            <i class="fas fa-user"></i>
+                                        </div>
+                                        <div class="user-details">
+                                            <div class="user-name">{{ agent.username }}</div>
+                                            <div class="user-meta">ID: {{ agent.id }}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>{{ agent.email }}</td>
+                                <td>
+                                    <span class="table-date">
+                                        {% if agent.verification_request_date %}
+                                            {{ agent.verification_request_date.strftime('%d %B %Y %H:%M') }}
+                                        {% else %}
+                                            Не вказано
+                                        {% endif %}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="agent-stats">
+                                        <span class="stat-item">Лідів: <strong>{{ agent.total_leads }}</strong></span>
+                                        <span class="stat-item">Угод: <strong>{{ agent.closed_deals }}</strong></span>
+                                        <span class="stat-item">Поінтів: <strong>{{ agent.points }}</strong></span>
+                                    </div>
+                                </td>
+                                <td style="text-align: center;">
+                                    <div class="table-actions">
+                                        <button class="action-btn success" onclick="verifyAgent({{ agent.id }}, true)" title="Верифікувати">
+                                            <i class="fas fa-check"></i>
+                                        </button>
+                                        <button class="action-btn danger" onclick="verifyAgent({{ agent.id }}, false)" title="Відхилити">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                        <button class="action-btn info" onclick="viewAgentDetails({{ agent.id }})" title="Деталі">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Всі агенти -->
+        <div class="form-container">
+            <div class="form-header">
+                <div class="form-title">
+                    <i class="fas fa-users"></i>
+                    <h3>Всі агенти ({{ all_agents|length }})</h3>
+                </div>
+            </div>
+            <div class="form-content">
+                <div class="leads-table-wrapper">
+                    <table class="leads-table">
+                        <thead>
+                            <tr>
+                                <th class="col-deal">
+                                    <i class="fas fa-user"></i>
+                                    <span>Агент</span>
+                                </th>
+                                <th class="col-agent">
+                                    <i class="fas fa-envelope"></i>
+                                    <span>Email</span>
+                                </th>
+                                <th class="col-status">
+                                    <i class="fas fa-shield-alt"></i>
+                                    <span>Статус верифікації</span>
+                                </th>
+                                <th class="col-budget">
+                                    <i class="fas fa-medal"></i>
+                                    <span>Рівень</span>
+                                </th>
+                                <th class="col-updated">
+                                    <i class="fas fa-chart-bar"></i>
+                                    <span>Статистика</span>
+                                </th>
+                                <th class="col-actions">
+                                    <i class="fas fa-cogs"></i>
+                                    <span>Дії</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for agent in all_agents %}
+                            <tr class="lead-row">
+                                <td class="col-deal">
+                                    <div class="agent-cell">
+                                        <i class="fas fa-user-circle"></i>
+                                        <span>{{ agent.username }}</span>
+                                    </div>
+                                </td>
+                                <td class="col-agent">{{ agent.email }}</td>
+                                <td class="col-status">
+                                    {% if agent.is_verified %}
+                                        <span class="status-badge" style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;">
+                                            <i class="fas fa-check-circle"></i>
+                                            <span>Верифікований</span>
+                                        </span>
+                                    {% elif agent.verification_requested %}
+                                        <span class="status-badge contacted">
+                                            <i class="fas fa-clock"></i>
+                                            <span>Очікує</span>
+                                        </span>
+                                    {% else %}
+                                        <span class="status-badge" style="background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5;">
+                                            <i class="fas fa-times-circle"></i>
+                                            <span>Не верифікований</span>
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td class="col-budget">
+                                    <span class="level-badge {{ agent.level }}">
+                                        {% if agent.level == 'bronze' %}
+                                            <i class="fas fa-medal"></i> Бронзовий
+                                        {% elif agent.level == 'silver' %}
+                                            <i class="fas fa-medal"></i> Срібний
+                                        {% elif agent.level == 'gold' %}
+                                            <i class="fas fa-medal"></i> Золотий
+                                        {% elif agent.level == 'platinum' %}
+                                            <i class="fas fa-crown"></i> Платиновий
+                                        {% endif %}
+                                    </span>
+                                </td>
+                                <td class="col-updated">
+                                    <div style="font-size: 0.875rem; color: var(--sidebar-text-muted);">
+                                        Лідів: <strong style="color: var(--sidebar-text);">{{ agent.total_leads }}</strong> | 
+                                        Угод: <strong style="color: var(--sidebar-text);">{{ agent.closed_deals }}</strong> | 
+                                        Поінтів: <strong style="color: var(--sidebar-text);">{{ agent.points }}</strong>
+                                    </div>
+                                </td>
+                                <td class="col-actions">
+                                    <div class="lead-actions">
+                                        {% if not agent.is_verified %}
+                                            <button class="action-btn success" onclick="verifyAgent({{ agent.id }}, true)" title="Верифікувати">
+                                                <i class="fas fa-check"></i>
+                                            </button>
+                                        {% endif %}
+                                        {% if agent.is_verified %}
+                                            <button class="action-btn warning" onclick="verifyAgent({{ agent.id }}, false)" title="Скасувати верифікацію">
+                                                <i class="fas fa-undo"></i>
+                                            </button>
+                                        {% endif %}
+                                        <button class="action-btn info" onclick="viewAgentDetails({{ agent.id }})" title="Деталі">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальне вікно для деталей агента -->
+<div class="modal fade" id="agentDetailsModal" tabindex="-1" aria-labelledby="agentDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="agentDetailsModalLabel">
+                    <i class="fas fa-user"></i> Деталі агента
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="agentDetailsContent">
+                <!-- Контент буде завантажено через AJAX -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const mainContent = document.getElementById('mainContent');
+    sidebar.classList.toggle('open');
+    mainContent.classList.toggle('sidebar-open');
+}
+
+function verifyAgent(agentId, approve) {
+    const action = approve ? 'верифікувати' : 'відхилити';
+    if (!confirm(`Ви впевнені, що хочете ${action} цього агента?`)) {
+        return;
+    }
+    
+    fetch('/admin/verify_agent', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            agent_id: agentId,
+            approve: approve
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message, 'success');
+            setTimeout(() => {
+                location.reload();
+            }, 2000);
+        } else {
+            showNotification(data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Помилка при обробці запиту', 'error');
+    });
+}
+
+function viewAgentDetails(agentId) {
+    fetch(`/admin/agent_details/${agentId}`)
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('agentDetailsContent').innerHTML = data.html;
+            const modal = new bootstrap.Modal(document.getElementById('agentDetailsModal'));
+            modal.show();
+        } else {
+            showNotification(data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Помилка при завантаженні деталей', 'error');
+    });
+}
+
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    
+    const icon = type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-triangle' : 'fa-info-circle';
+    
+    notification.innerHTML = `
+        <i class="fas ${icon} notification-icon"></i>
+        <div class="notification-content">${message}</div>
+        <button class="notification-close" onclick="this.parentElement.remove()">
+            <i class="fas fa-times"></i>
+        </button>
+        <div class="notification-progress"></div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.classList.add('show');
+    }, 10);
+    
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 300);
+    }, 4000);
+}
+</script>
+{% endblock %}

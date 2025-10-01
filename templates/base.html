@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Real Estate Agents Hub{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/sidebar.css') }}" rel="stylesheet">
+    <style>
+        .p-4 {
+            padding: 1.5rem !important;
+        }
+        .mb-6 {
+            margin-bottom: 2rem !important;
+        }
+        .bg-muted {
+            background-color: #f8f9fa !important;
+        }
+    </style>
+</head>
+<body>
+
+        <!-- Notification Container -->
+        <div class="notification-container" id="notificationContainer"></div>
+
+    <!-- Main Content -->
+    {% block content %}{% endblock %}
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Notification System -->
+    <script>
+    class NotificationSystem {
+        constructor() {
+            this.container = document.getElementById('notificationContainer');
+            this.notifications = new Map();
+        }
+
+        show(message, type = 'info', duration = 4000) {
+            const id = Date.now() + Math.random();
+            const notification = this.createNotification(id, message, type, duration);
+            
+            this.container.appendChild(notification);
+            this.notifications.set(id, notification);
+
+            // Trigger animation
+            setTimeout(() => {
+                notification.classList.add('show');
+            }, 10);
+
+            // Auto remove
+            setTimeout(() => {
+                this.remove(id);
+            }, duration);
+
+            return id;
+        }
+
+        createNotification(id, message, type, duration) {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.dataset.id = id;
+
+            const icon = this.getIcon(type);
+            
+            notification.innerHTML = `
+                <i class="fas ${icon} notification-icon"></i>
+                <div class="notification-content">${message}</div>
+                <button class="notification-close" onclick="notificationSystem.remove(${id})">
+                    <i class="fas fa-times"></i>
+                </button>
+                <div class="notification-progress" style="width: 100%;"></div>
+            `;
+
+            // Start progress bar animation
+            setTimeout(() => {
+                const progressBar = notification.querySelector('.notification-progress');
+                if (progressBar) {
+                    progressBar.style.width = '0%';
+                }
+            }, 10);
+
+            return notification;
+        }
+
+        getIcon(type) {
+            const icons = {
+                success: 'fa-check-circle',
+                error: 'fa-exclamation-triangle',
+                info: 'fa-info-circle',
+                warning: 'fa-exclamation-circle'
+            };
+            return icons[type] || icons.info;
+        }
+
+        remove(id) {
+            const notification = this.notifications.get(id);
+            if (notification) {
+                notification.classList.remove('show');
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                    this.notifications.delete(id);
+                }, 300);
+            }
+        }
+
+        clear() {
+            this.notifications.forEach((notification, id) => {
+                this.remove(id);
+            });
+        }
+    }
+
+    // Initialize notification system
+    const notificationSystem = new NotificationSystem();
+
+    // Handle flash messages from server
+    document.addEventListener('DOMContentLoaded', function() {
+        // Check for flash messages in URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const flashMessage = urlParams.get('flash');
+        const flashType = urlParams.get('type') || 'info';
+        
+        if (flashMessage) {
+            notificationSystem.show(decodeURIComponent(flashMessage), flashType);
+            
+            // Clean URL
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.delete('flash');
+            newUrl.searchParams.delete('type');
+            window.history.replaceState({}, '', newUrl);
+        }
+    });
+    </script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>
