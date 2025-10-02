@@ -2160,6 +2160,7 @@ if __name__ == '__main__':
         # Створюємо адміна якщо його немає
         admin = User.query.filter_by(username='admin').first()
         if not admin:
+            from werkzeug.security import generate_password_hash
             admin = User(
                 username='admin',
                 email='admin@example.com',
