@@ -229,6 +229,7 @@ class Lead(db.Model):
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
 
+
 # Форми
 class LoginForm(Form):
     username = StringField('Ім\'я користувача', [validators.Length(min=4, max=25)])
@@ -411,6 +412,7 @@ class LeadEditForm(Form):
         ('signal', 'Signal')
     ])
     birth_date = StringField('Дата народження', [validators.Length(max=10)])
+
 
 @login_manager.user_loader
 def load_user(user_id):

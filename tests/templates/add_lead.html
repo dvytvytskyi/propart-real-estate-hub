@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add Lead</title>
+</head>
+<body>
+    <h1>Add Lead</h1>
+    <form method="POST">
+        {{ form.csrf_token }}
+        {{ form.deal_name.label }}: {{ form.deal_name() }}<br>
+        {{ form.email.label }}: {{ form.email() }}<br>
+        {{ form.phone.label }}: {{ form.phone() }}<br>
+        {{ form.budget.label }}: {{ form.budget() }}<br>
+        {{ form.notes.label }}: {{ form.notes() }}<br>
+        {{ form.agent_id() }}
+        <button type="submit">Add Lead</button>
+    </form>
+</body>
+</html>

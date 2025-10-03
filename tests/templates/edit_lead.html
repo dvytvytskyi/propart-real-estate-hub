@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Edit Lead</title>
+</head>
+<body>
+    <h1>Edit Lead</h1>
+    <form method="POST">
+        <label>Deal Name: <input type="text" name="deal_name" value="{{ lead.deal_name }}"></label><br>
+        <label>Email: <input type="email" name="email" value="{{ lead.email }}"></label><br>
+        <label>Phone: <input type="text" name="phone" value="{{ lead.phone }}"></label><br>
+        <label>Budget: <input type="text" name="budget" value="{{ lead.budget }}"></label><br>
+        <label>Status: <input type="text" name="status" value="{{ lead.status }}"></label><br>
+        <button type="submit">Update Lead</button>
+    </form>
+</body>
+</html>
