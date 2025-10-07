@@ -1637,19 +1637,28 @@ def add_lead():
             
             # Спробуємо створити в HubSpot (якщо API налаштований)
             if hubspot_client:
-                print(f"Створюємо контакт в HubSpot для {form.email.data}")
+                print(f"=== ПОЧАТОК СТВОРЕННЯ КОНТАКТУ В HUBSPOT ===")
+                print(f"Email: {form.email.data}")
+                print(f"Deal name: {form.deal_name.data}")
+                print(f"Phone: {formatted_phone}")
+                print(f"Budget: {form.budget.data}")
+                print(f"HubSpot client: {hubspot_client}")
                 try:
                     # Перевіряємо, чи існує контакт з таким email
                     from hubspot.crm.contacts import SimplePublicObjectInput
                     
                     try:
                         # Шукаємо існуючий контакт за email
+                        print(f"=== ПОШУК ІСНУЮЧОГО КОНТАКТУ ===")
+                        print(f"Пошук за email: {form.email.data}")
                         existing_contacts = hubspot_client.crm.contacts.search_api.do_search(
                             query=form.email.data,
                             properties=["email", "firstname", "lastname"],
                             limit=1
                         )
                         print(f"Пошук контакту за email {form.email.data}: знайдено {len(existing_contacts.results)} контактів")
+                        if existing_contacts.results:
+                            print(f"Знайдений контакт: ID={existing_contacts.results[0].id}, properties={existing_contacts.results[0].properties}")
                         
                         if existing_contacts.results:
                             # Контакт існує, використовуємо його
@@ -1657,6 +1666,7 @@ def add_lead():
                             print(f"Використовуємо існуючий HubSpot контакт: {hubspot_contact_id}")
                         else:
                             # Контакт не існує, створюємо новий
+                            print(f"=== СТВОРЕННЯ НОВОГО КОНТАКТУ ===")
                             print(f"Контакт не знайдено, створюємо новий для {form.email.data}")
                             contact_properties = {
                                 "email": form.email.data,
@@ -1671,7 +1681,10 @@ def add_lead():
                             print(f"HubSpot контакт створено: {hubspot_contact_id}")
                             
                     except Exception as search_error:
+                        print(f"=== ПОМИЛКА ПОШУКУ КОНТАКТУ ===")
                         print(f"Помилка пошуку контакту: {search_error}")
+                        print(f"Тип помилки: {type(search_error).__name__}")
+                        print(f"Email: {form.email.data}")
                         # Якщо пошук не вдався, спробуємо створити контакт
                         try:
                             contact_properties = {
@@ -1686,6 +1699,11 @@ def add_lead():
                             hubspot_contact_id = str(hubspot_contact.id)
                             print(f"HubSpot контакт створено: {hubspot_contact_id}")
                         except Exception as create_error:
+                            print(f"=== ПОМИЛКА СТВОРЕННЯ КОНТАКТУ ===")
+                            print(f"Помилка створення контакту: {create_error}")
+                            print(f"Тип помилки: {type(create_error).__name__}")
+                            print(f"Email: {form.email.data}")
+                            print(f"Phone: {formatted_phone}")
                             # Якщо контакт вже існує, показуємо помилку
                             if "Contact already exists" in str(create_error):
                                 return redirect(url_for('add_lead', flash=f'Контакт з email {form.email.data} вже існує в системі. Будь ласка, використайте інший email або зверніться до адміністратора.', type='error'))
@@ -1693,7 +1711,9 @@ def add_lead():
                                 raise create_error
                     
                     # Створюємо deal в HubSpot
+                    print(f"=== СТВОРЕННЯ УГОДИ В HUBSPOT ===")
                     print(f"Створюємо угоду в HubSpot: {form.deal_name.data}")
+                    print(f"Контакт ID: {hubspot_contact_id}")
                     from hubspot.crm.deals import SimplePublicObjectInput as DealInput
                     
                     deal_properties = {
@@ -1706,11 +1726,14 @@ def add_lead():
                     
                     print(f"Властивості угоди: {deal_properties}")
                     deal_input = DealInput(properties=deal_properties)
+                    print(f"Створюємо угоду з вхідними даними: {deal_input}")
                     hubspot_deal = hubspot_client.crm.deals.basic_api.create(simple_public_object_input=deal_input)
                     hubspot_deal_id = str(hubspot_deal.id)
-                    print(f"HubSpot угода створено: {hubspot_deal_id}")
+                    print(f"HubSpot угода створено успішно: {hubspot_deal_id}")
+                    print(f"Повна відповідь: {hubspot_deal}")
                     
                     # Створюємо зв'язок між контактом та угодою
+                    print(f"=== СТВОРЕННЯ ЗВ'ЯЗКУ КОНТАКТ-УГОДА ===")
                     try:
                         from hubspot.crm.associations import SimplePublicObjectId
                         
@@ -1727,15 +1750,37 @@ def add_lead():
                         )
                         print(f"Зв'язок між контактом {hubspot_contact_id} та угодою {hubspot_deal_id} створено")
                     except Exception as assoc_error:
+                        print(f"=== ПОМИЛКА СТВОРЕННЯ ЗВ'ЯЗКУ ===")
                         print(f"Помилка створення зв'язку: {assoc_error}")
+                        print(f"Тип помилки: {type(assoc_error).__name__}")
+                        print(f"Contact ID: {hubspot_contact_id}")
+                        print(f"Deal ID: {hubspot_deal_id}")
                     
                 except Exception as hubspot_error:
-                    print(f"HubSpot помилка: {hubspot_error}")
+                    error_msg = str(hubspot_error)
+                    print(f"=== ДЕТАЛЬНА ПОМИЛКА HUBSPOT ===")
+                    print(f"Тип помилки: {type(hubspot_error).__name__}")
+                    print(f"Повідомлення: {error_msg}")
+                    print(f"Email: {form.email.data}")
+                    print(f"Deal name: {form.deal_name.data}")
+                    print(f"Phone: {formatted_phone}")
+                    print(f"Budget: {form.budget.data}")
+                    
+                    # Логуємо в файл
+                    app.logger.error(f"HubSpot помилка при створенні ліда: {error_msg}")
+                    app.logger.error(f"Деталі: email={form.email.data}, deal_name={form.deal_name.data}, phone={formatted_phone}")
+                    
                     # Якщо контакт вже існує, показуємо помилку
-                    if "Contact already exists" in str(hubspot_error):
+                    if "Contact already exists" in error_msg or "409" in error_msg:
                         return redirect(url_for('add_lead', flash=f'Контакт з email {form.email.data} вже існує в системі. Будь ласка, використайте інший email або зверніться до адміністратора.', type='error'))
+                    elif "401" in error_msg or "Unauthorized" in error_msg:
+                        return redirect(url_for('add_lead', flash='Лід додано локально. Помилка авторизації HubSpot API (недійсний ключ).', type='warning'))
+                    elif "403" in error_msg or "Forbidden" in error_msg:
+                        return redirect(url_for('add_lead', flash='Лід додано локально. Немає прав доступу до HubSpot API.', type='warning'))
+                    elif "429" in error_msg or "rate limit" in error_msg.lower():
+                        return redirect(url_for('add_lead', flash='Лід додано локально. Перевищено ліміт запитів до HubSpot API.', type='warning'))
                     else:
-                        return redirect(url_for('add_lead', flash='Лід додано локально. Помилка синхронізації з HubSpot.', type='warning'))
+                        return redirect(url_for('add_lead', flash=f'Лід додано локально. Помилка HubSpot: {error_msg[:100]}...', type='warning'))
             else:
                 print("HubSpot клієнт не налаштований")
                 return redirect(url_for('add_lead', flash='Лід додано локально. HubSpot API не налаштований.', type='warning'))
