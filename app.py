@@ -1651,10 +1651,15 @@ def add_lead():
                         # Шукаємо існуючий контакт за email
                         print(f"=== ПОШУК ІСНУЮЧОГО КОНТАКТУ ===")
                         print(f"Пошук за email: {form.email.data}")
-                        existing_contacts = hubspot_client.crm.contacts.search_api.do_search(
+                        from hubspot.crm.contacts import PublicObjectSearchRequest
+                        
+                        search_request = PublicObjectSearchRequest(
                             query=form.email.data,
                             properties=["email", "firstname", "lastname"],
                             limit=1
+                        )
+                        existing_contacts = hubspot_client.crm.contacts.search_api.do_search(
+                            public_object_search_request=search_request
                         )
                         print(f"Пошук контакту за email {form.email.data}: знайдено {len(existing_contacts.results)} контактів")
                         if existing_contacts.results:
@@ -1676,7 +1681,7 @@ def add_lead():
                             }
                             
                             contact_input = SimplePublicObjectInput(properties=contact_properties)
-                            hubspot_contact = hubspot_client.crm.contacts.basic_api.create(simple_public_object_input=contact_input)
+                            hubspot_contact = hubspot_client.crm.contacts.basic_api.create(simple_public_object_input_for_create=contact_input)
                             hubspot_contact_id = str(hubspot_contact.id)
                             print(f"HubSpot контакт створено: {hubspot_contact_id}")
                             
@@ -1695,7 +1700,7 @@ def add_lead():
                             }
                             
                             contact_input = SimplePublicObjectInput(properties=contact_properties)
-                            hubspot_contact = hubspot_client.crm.contacts.basic_api.create(simple_public_object_input=contact_input)
+                            hubspot_contact = hubspot_client.crm.contacts.basic_api.create(simple_public_object_input_for_create=contact_input)
                             hubspot_contact_id = str(hubspot_contact.id)
                             print(f"HubSpot контакт створено: {hubspot_contact_id}")
                         except Exception as create_error:
@@ -1727,7 +1732,9 @@ def add_lead():
                     print(f"Властивості угоди: {deal_properties}")
                     deal_input = DealInput(properties=deal_properties)
                     print(f"Створюємо угоду з вхідними даними: {deal_input}")
-                    hubspot_deal = hubspot_client.crm.deals.basic_api.create(simple_public_object_input=deal_input)
+                    hubspot_deal = hubspot_client.crm.deals.basic_api.create(
+                        simple_public_object_input_for_create=deal_input
+                    )
                     hubspot_deal_id = str(hubspot_deal.id)
                     print(f"HubSpot угода створено успішно: {hubspot_deal_id}")
                     print(f"Повна відповідь: {hubspot_deal}")
