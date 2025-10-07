@@ -7,6 +7,7 @@ from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
 from wtforms import Form, StringField, PasswordField, TextAreaField, SelectField, HiddenField, validators
 from dotenv import load_dotenv
+import traceback
 import os
 import time
 import requests
@@ -777,7 +778,7 @@ def create_note_in_hubspot(lead, note_text, note_type="note"):
         note_input = NoteInput(properties=note_properties)
         
         # Створюємо нотатку
-        hubspot_note = hubspot_client.crm.objects.notes.basic_api.create(simple_public_object_input=note_input)
+        hubspot_note = hubspot_client.crm.objects.notes.basic_api.create(note_input)
         hubspot_note_id = str(hubspot_note.id)
         print(f"Створено нотатку в HubSpot: {hubspot_note_id}")
         
@@ -832,6 +833,7 @@ def create_note_in_hubspot(lead, note_text, note_type="note"):
         
     except Exception as e:
         print(f"Помилка створення нотатки в HubSpot: {e}")
+        traceback.print_exc()
         return False
 
 def sync_lead_from_hubspot(lead):
@@ -1681,7 +1683,7 @@ def add_lead():
                             }
                             
                             contact_input = SimplePublicObjectInput(properties=contact_properties)
-                            hubspot_contact = hubspot_client.crm.contacts.basic_api.create(simple_public_object_input_for_create=contact_input)
+                            hubspot_contact = hubspot_client.crm.contacts.basic_api.create(contact_input)
                             hubspot_contact_id = str(hubspot_contact.id)
                             print(f"HubSpot контакт створено: {hubspot_contact_id}")
                             
@@ -1690,6 +1692,7 @@ def add_lead():
                         print(f"Помилка пошуку контакту: {search_error}")
                         print(f"Тип помилки: {type(search_error).__name__}")
                         print(f"Email: {form.email.data}")
+                        traceback.print_exc()
                         # Якщо пошук не вдався, спробуємо створити контакт
                         try:
                             contact_properties = {
@@ -1700,7 +1703,7 @@ def add_lead():
                             }
                             
                             contact_input = SimplePublicObjectInput(properties=contact_properties)
-                            hubspot_contact = hubspot_client.crm.contacts.basic_api.create(simple_public_object_input_for_create=contact_input)
+                            hubspot_contact = hubspot_client.crm.contacts.basic_api.create(contact_input)
                             hubspot_contact_id = str(hubspot_contact.id)
                             print(f"HubSpot контакт створено: {hubspot_contact_id}")
                         except Exception as create_error:
@@ -1709,6 +1712,7 @@ def add_lead():
                             print(f"Тип помилки: {type(create_error).__name__}")
                             print(f"Email: {form.email.data}")
                             print(f"Phone: {formatted_phone}")
+                            traceback.print_exc()
                             # Якщо контакт вже існує, показуємо помилку
                             if "Contact already exists" in str(create_error):
                                 return redirect(url_for('add_lead', flash=f'Контакт з email {form.email.data} вже існує в системі. Будь ласка, використайте інший email або зверніться до адміністратора.', type='error'))
@@ -1732,9 +1736,7 @@ def add_lead():
                     print(f"Властивості угоди: {deal_properties}")
                     deal_input = DealInput(properties=deal_properties)
                     print(f"Створюємо угоду з вхідними даними: {deal_input}")
-                    hubspot_deal = hubspot_client.crm.deals.basic_api.create(
-                        simple_public_object_input_for_create=deal_input
-                    )
+                    hubspot_deal = hubspot_client.crm.deals.basic_api.create(deal_input)
                     hubspot_deal_id = str(hubspot_deal.id)
                     print(f"HubSpot угода створено успішно: {hubspot_deal_id}")
                     print(f"Повна відповідь: {hubspot_deal}")
@@ -1772,6 +1774,7 @@ def add_lead():
                     print(f"Deal name: {form.deal_name.data}")
                     print(f"Phone: {formatted_phone}")
                     print(f"Budget: {form.budget.data}")
+                    traceback.print_exc()
                     
                     # Логуємо в файл
                     app.logger.error(f"HubSpot помилка при створенні ліда: {error_msg}")
