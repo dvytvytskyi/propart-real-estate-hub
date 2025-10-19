@@ -217,6 +217,75 @@
             {% endif %}
         </div>
 
+        <!-- Документи -->
+        {% if current_user.role == 'agent' %}
+        <div class="profile-card" style="margin-top: 2rem;">
+            <div class="form-header">
+                <div class="form-title">
+                    <i class="fas fa-file-alt"></i>
+                    <h3>Документи</h3>
+                </div>
+                <span style="font-size: 0.875rem; color: var(--sidebar-text-muted);">
+                    Завантажено: {{ documents|length }}
+                </span>
+            </div>
+            <div class="form-content">
+                {% if documents %}
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                        {% for doc in documents %}
+                        <div class="document-item" style="display: flex; align-items: center; gap: 1rem; padding: 0.75rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                            <div style="font-size: 1.5rem; color: var(--sidebar-primary); width: 2rem; text-align: center;">
+                                {% if doc.file_type and 'pdf' in doc.file_type %}
+                                    <i class="fas fa-file-pdf"></i>
+                                {% elif doc.file_type and ('word' in doc.file_type or 'document' in doc.file_type) %}
+                                    <i class="fas fa-file-word"></i>
+                                {% elif doc.file_type and 'image' in doc.file_type %}
+                                    <i class="fas fa-file-image"></i>
+                                {% else %}
+                                    <i class="fas fa-file-alt"></i>
+                                {% endif %}
+                            </div>
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-weight: 500; color: var(--sidebar-text); margin-bottom: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    {{ doc.filename }}
+                                </div>
+                                <div style="font-size: 0.75rem; color: var(--sidebar-text-muted);">
+                                    {% if doc.file_size %}
+                                        {% set kb = (doc.file_size / 1024)|round(2) %}
+                                        {% set mb = (doc.file_size / 1024 / 1024)|round(2) %}
+                                        {% if mb >= 1 %}
+                                            {{ mb }} MB
+                                        {% else %}
+                                            {{ kb }} KB
+                                        {% endif %}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                    • {{ doc.uploaded_at.strftime('%d.%m.%Y %H:%M') if doc.uploaded_at else '-' }}
+                                    {% if doc.uploader %}
+                                        • Завантажив: {{ doc.uploader.username }}
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div>
+                                <a href="/documents/{{ doc.id }}/download" class="btn btn-sm btn-outline-primary" style="white-space: nowrap;">
+                                    <i class="fas fa-download"></i> Завантажити
+                                </a>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div style="text-align: center; padding: 3rem; color: var(--sidebar-text-muted);">
+                        <i class="fas fa-folder-open fa-3x" style="opacity: 0.3; margin-bottom: 1rem;"></i>
+                        <p style="margin: 0;">Немає завантажених документів</p>
+                        <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem;">Документи завантажує адміністратор</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Progress Section -->
         {% if current_user.role == 'agent' %}
         <div class="profile-card" style="margin-top: 2rem;">

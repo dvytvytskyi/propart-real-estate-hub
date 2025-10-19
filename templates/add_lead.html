@@ -38,7 +38,7 @@
                         {% endif %}
                     {% endwith %}
                     
-                    <form method="POST" class="lead-form">
+                    <form method="POST" class="lead-form" autocomplete="off">
                         <div class="form-grid">
                             <div class="form-group">
                                 <label for="deal_name" class="form-label">
@@ -47,7 +47,7 @@
                                 </label>
                                 <input type="text" class="form-input" id="deal_name" name="deal_name" 
                                        value="{{ form.deal_name.data or '' }}" required
-                                       placeholder="Введіть назву угоди">
+                                       placeholder="Введіть назву угоди" autocomplete="off">
                                 {% if form.deal_name.errors %}
                                     <div class="form-error">
                                         {% for error in form.deal_name.errors %}
@@ -64,7 +64,7 @@
                                 </label>
                                 <input type="email" class="form-input" id="email" name="email" 
                                        value="{{ form.email.data or '' }}" required
-                                       placeholder="example@email.com">
+                                       placeholder="example@email.com" autocomplete="off">
                                 {% if form.email.errors %}
                                     <div class="form-error">
                                         {% for error in form.email.errors %}
@@ -80,9 +80,13 @@
                                     <span>Номер телефону *</span>
                                 </label>
                                 <input type="tel" class="form-input" id="phone" name="phone" 
-                                       value="{{ form.phone.data or '' }}" required
-                                       placeholder="+380 XX XXX XX XX">
+                                       value="{{ form.phone.data or '+' }}" required
+                                       placeholder="+380 XX XXX XX XX" autocomplete="off">
                                 <div class="form-hint">Введіть номер у міжнародному форматі</div>
+                                
+                                <!-- Валідація телефону: результати пошуку -->
+                                <div id="phoneValidation" style="display: none; margin-top: 0.75rem;"></div>
+                                
                                 {% if form.phone.errors %}
                                     <div class="form-error">
                                         {% for error in form.phone.errors %}
@@ -97,7 +101,7 @@
                                     <i class="fas fa-dollar-sign"></i>
                                     <span>Бюджет *</span>
                                 </label>
-                                <select class="form-select" id="budget" name="budget" required>
+                                <select class="form-select" id="budget" name="budget" required autocomplete="off">
                                     <option value="">Оберіть бюджет</option>
                                     <option value="до 200к" {% if form.budget.data == 'до 200к' %}selected{% endif %}>до 200к</option>
                                     <option value="200к–500к" {% if form.budget.data == '200к–500к' %}selected{% endif %}>200к–500к</option>
@@ -120,7 +124,7 @@
                                 <span>Примітки</span>
                             </label>
                             <textarea class="form-textarea" id="notes" name="notes" rows="4" 
-                                      placeholder="Додаткові відомості про лід...">{{ form.notes.data or '' }}</textarea>
+                                      placeholder="Додаткові відомості про лід..." autocomplete="off">{{ form.notes.data or '' }}</textarea>
                             {% if form.notes.errors %}
                                 <div class="form-error">
                                     {% for error in form.notes.errors %}
@@ -202,24 +206,53 @@
 
 {% block scripts %}
 <script>
+// Глобальні змінні для валідації телефону
+let phoneCheckTimeout;
+let lastCheckedPhone = '';
+
 document.addEventListener('DOMContentLoaded', function() {
     // Форматування телефону
     const phoneInput = document.getElementById('phone');
     if (phoneInput) {
+        // Встановлюємо "+" по дефолту, якщо поле пусте
+        if (!phoneInput.value || phoneInput.value === '') {
+            phoneInput.value = '+';
+        }
+        
+        // Обробка введення
         phoneInput.addEventListener('input', function(e) {
-            let value = e.target.value.replace(/\D/g, '');
+            let value = e.target.value;
             
-            // Автоматично додаємо +380 для українських номерів
-            if (value.startsWith('380')) {
-                value = '+' + value;
-            } else if (value.startsWith('0')) {
-                value = '+38' + value;
-            } else if (value.length > 0 && !value.startsWith('+')) {
-                // Якщо починається з іншої країни, додаємо +
-                value = '+' + value;
+            // Завжди залишаємо "+" на початку
+            if (!value.startsWith('+')) {
+                value = '+' + value.replace(/\+/g, ''); // Видаляємо всі інші "+" і додаємо один на початку
+            }
+            
+            // Якщо користувач видалив "+"
+            if (value === '' || value.length === 0) {
+                value = '+';
             }
             
             e.target.value = value;
+            
+            // Real-time перевірка на дублікати (з дебаунсом)
+            if (value.length > 1) { // Перевіряємо тільки якщо є цифри після "+"
+                checkPhoneDebounced(value);
+            }
+        });
+        
+        // Запобігаємо видаленню "+" при backspace
+        phoneInput.addEventListener('keydown', function(e) {
+            if ((e.key === 'Backspace' || e.key === 'Delete') && phoneInput.selectionStart <= 1) {
+                e.preventDefault();
+            }
+        });
+        
+        // Якщо користувач намагається очистити поле
+        phoneInput.addEventListener('blur', function(e) {
+            if (!e.target.value || e.target.value === '') {
+                e.target.value = '+';
+            }
         });
     }
     
@@ -292,6 +325,114 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 });
+
+// ===== ВАЛІДАЦІЯ ТЕЛЕФОНУ: ПЕРЕВІРКА НА ДУБЛІКАТИ =====
+
+function checkPhoneDebounced(phone) {
+    // Очищаємо попередній таймер
+    clearTimeout(phoneCheckTimeout);
+    
+    // Якщо номер закороткий - ховаємо валідацію
+    if (!phone || phone.length < 4) {
+        hidePhoneValidation();
+        return;
+    }
+    
+    // Не перевіряємо той самий номер повторно
+    if (phone === lastCheckedPhone) {
+        return;
+    }
+    
+    // Показуємо індикатор завантаження
+    showPhoneChecking();
+    
+    // Запускаємо перевірку через 500ms після останнього введення
+    phoneCheckTimeout = setTimeout(() => {
+        checkPhoneNumber(phone);
+    }, 500);
+}
+
+function showPhoneChecking() {
+    const validationDiv = document.getElementById('phoneValidation');
+    if (validationDiv) {
+        validationDiv.style.display = 'block';
+        validationDiv.innerHTML = `
+            <div style="padding: 0.75rem; background: #f8fafc; border-left: 3px solid #94a3b8; border-radius: 6px;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; color: #64748b; font-size: 0.875rem;">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <span>Перевірка номера...</span>
+                </div>
+            </div>
+        `;
+    }
+}
+
+function hidePhoneValidation() {
+    const validationDiv = document.getElementById('phoneValidation');
+    if (validationDiv) {
+        validationDiv.style.display = 'none';
+        validationDiv.innerHTML = '';
+    }
+    lastCheckedPhone = '';
+}
+
+function checkPhoneNumber(phone) {
+    lastCheckedPhone = phone;
+    
+    fetch('/api/check-phone', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ phone: phone })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            displayPhoneValidationResults(data);
+        } else {
+            console.error('Помилка перевірки телефону:', data.message);
+            hidePhoneValidation();
+        }
+    })
+    .catch(error => {
+        console.error('Помилка запиту:', error);
+        hidePhoneValidation();
+    });
+}
+
+function displayPhoneValidationResults(data) {
+    const validationDiv = document.getElementById('phoneValidation');
+    if (!validationDiv) return;
+    
+    if (data.count === 0) {
+        // Номер унікальний - показуємо успіх
+        validationDiv.style.display = 'block';
+        validationDiv.innerHTML = `
+            <div style="padding: 0.75rem; background: #f0fdf4; border-left: 3px solid #22c55e; border-radius: 6px;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; color: #166534; font-size: 0.875rem;">
+                    <i class="fas fa-check-circle"></i>
+                    <span><strong>Новий номер</strong> - збігів не знайдено</span>
+                </div>
+            </div>
+        `;
+    } else {
+        // Знайдені дублікати - показуємо попередження з кількістю
+        validationDiv.style.display = 'block';
+        validationDiv.innerHTML = `
+            <div style="padding: 1rem; background: #fef3c7; border-left: 3px solid #f59e0b; border-radius: 6px;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; color: #92400e; font-size: 0.875rem; font-weight: 500;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>Знайдено ${data.count} ${data.count === 1 ? 'схожий номер' : 'схожих номерів'}</span>
+                </div>
+                <div style="color: #78350f; font-size: 0.8125rem; margin-top: 0.5rem;">
+                    ⓘ Можливо це дублікат існуючого ліда
+                </div>
+            </div>
+        `;
+    }
+}
+
 </script>
 </div>
 {% endblock %}

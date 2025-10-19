@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, make_response
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_bcrypt import Bcrypt
 from flask_limiter import Limiter
@@ -13,6 +14,9 @@ import time
 import requests
 import phonenumbers
 from phonenumbers import carrier, geocoder, timezone
+import boto3
+from botocore.exceptions import ClientError
+import io
 from hubspot import HubSpot
 from logging_config import setup_logging
 from hubspot_rate_limiter import hubspot_rate_limiter
@@ -38,6 +42,13 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
     'postgresql://localhost/real_estate_agents'
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# AWS S3 Configuration
+app.config['AWS_ACCESS_KEY_ID'] = os.getenv('AWS_ACCESS_KEY_ID')
+app.config['AWS_SECRET_ACCESS_KEY'] = os.getenv('AWS_SECRET_ACCESS_KEY')
+app.config['AWS_S3_BUCKET'] = os.getenv('AWS_S3_BUCKET')
+app.config['AWS_REGION'] = os.getenv('AWS_REGION', 'eu-central-1')
+
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_size': 10,
     'pool_recycle': 3600,
@@ -75,6 +86,103 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
+# ===== AWS S3 CLIENT =====
+def get_s3_client():
+    """Створює та повертає S3 клієнт"""
+    app.logger.info("🔍 Перевірка конфігурації S3...")
+    
+    access_key = app.config.get('AWS_ACCESS_KEY_ID')
+    secret_key = app.config.get('AWS_SECRET_ACCESS_KEY')
+    bucket = app.config.get('AWS_S3_BUCKET')
+    region = app.config.get('AWS_REGION')
+    
+    app.logger.info(f"   AWS_ACCESS_KEY_ID: {'✅ встановлено' if access_key else '❌ відсутнє'}")
+    app.logger.info(f"   AWS_SECRET_ACCESS_KEY: {'✅ встановлено' if secret_key else '❌ відсутнє'}")
+    app.logger.info(f"   AWS_S3_BUCKET: {bucket if bucket else '❌ відсутнє'}")
+    app.logger.info(f"   AWS_REGION: {region if region else 'за замовчуванням'}")
+    
+    if not all([access_key, secret_key, bucket]):
+        app.logger.error("❌ S3 не налаштовано повністю!")
+        return None
+    
+    app.logger.info("✅ S3 клієнт створено успішно")
+    return boto3.client(
+        's3',
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        region_name=region
+    )
+
+def upload_file_to_s3(file, filename):
+    """Завантажує файл в S3 bucket"""
+    app.logger.info(f"📤 Початок завантаження файлу в S3: {filename}")
+    
+    s3_client = get_s3_client()
+    if not s3_client:
+        app.logger.error("❌ S3 клієнт не створено - перевірте змінні середовища")
+        raise Exception("S3 не налаштовано. Перевірте змінні середовища AWS.")
+    
+    try:
+        bucket = app.config['AWS_S3_BUCKET']
+        content_type = file.content_type if hasattr(file, 'content_type') else 'application/octet-stream'
+        
+        app.logger.info(f"   Bucket: {bucket}")
+        app.logger.info(f"   Filename: {filename}")
+        app.logger.info(f"   Content-Type: {content_type}")
+        
+        # Повертаємо на початок файлу перед завантаженням
+        file.seek(0)
+        
+        s3_client.upload_fileobj(
+            file,
+            bucket,
+            filename,
+            ExtraArgs={
+                'ContentType': content_type
+            }
+        )
+        
+        s3_url = f"https://{bucket}.s3.{app.config['AWS_REGION']}.amazonaws.com/{filename}"
+        app.logger.info(f"✅ Файл успішно завантажено в S3: {s3_url}")
+        return s3_url
+        
+    except ClientError as e:
+        app.logger.error(f"❌ AWS ClientError: {e}")
+        app.logger.error(f"   Error Code: {e.response.get('Error', {}).get('Code', 'Unknown')}")
+        app.logger.error(f"   Error Message: {e.response.get('Error', {}).get('Message', 'Unknown')}")
+        raise Exception(f"Не вдалося завантажити файл в S3: {str(e)}")
+    except Exception as e:
+        app.logger.error(f"❌ Загальна помилка завантаження: {type(e).__name__}: {str(e)}")
+        raise Exception(f"Помилка: {str(e)}")
+
+def download_file_from_s3(filename):
+    """Завантажує файл з S3 bucket"""
+    s3_client = get_s3_client()
+    if not s3_client:
+        raise Exception("S3 не налаштовано")
+    
+    try:
+        file_obj = io.BytesIO()
+        s3_client.download_fileobj(app.config['AWS_S3_BUCKET'], filename, file_obj)
+        file_obj.seek(0)
+        return file_obj
+    except ClientError as e:
+        app.logger.error(f"Помилка завантаження з S3: {e}")
+        raise Exception(f"Не вдалося завантажити файл з S3: {str(e)}")
+
+def delete_file_from_s3(filename):
+    """Видаляє файл з S3 bucket"""
+    s3_client = get_s3_client()
+    if not s3_client:
+        raise Exception("S3 не налаштовано")
+    
+    try:
+        s3_client.delete_object(Bucket=app.config['AWS_S3_BUCKET'], Key=filename)
+        return True
+    except ClientError as e:
+        app.logger.error(f"Помилка видалення з S3: {e}")
+        return False
+
 # ===== HUBSPOT API =====
 HUBSPOT_API_KEY = os.getenv('HUBSPOT_API_KEY')
 if HUBSPOT_API_KEY:
@@ -99,6 +207,9 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(120), nullable=False)
     role = db.Column(db.String(20), nullable=False, default='agent')  # 'agent' або 'admin'
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    
+    # Комісія агента (у відсотках)
+    commission = db.Column(db.Float, default=0.0)
     
     # Геймифікація
     points = db.Column(db.Integer, default=0)
@@ -200,6 +311,7 @@ class User(UserMixin, db.Model):
 class Lead(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     agent_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    agent = db.relationship('User', backref='leads', foreign_keys=[agent_id])
     deal_name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(120), nullable=False)
     phone = db.Column(db.String(20))
@@ -314,6 +426,22 @@ class Activity(db.Model):
     
     # Зв'язок з лідом
     lead = db.relationship('Lead', backref='activities')
+
+class UserDocument(db.Model):
+    """Документи користувачів (паспорти, договори, тощо)"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    filename = db.Column(db.String(255), nullable=False)  # Оригінальна назва файлу
+    file_path = db.Column(db.String(500), nullable=False)  # Шлях до файлу на сервері
+    file_size = db.Column(db.Integer)  # Розмір файлу в байтах
+    file_type = db.Column(db.String(100))  # MIME type (image/jpeg, application/pdf, тощо)
+    uploaded_by = db.Column(db.Integer, db.ForeignKey('user.id'))  # Хто завантажив (адмін або сам користувач)
+    uploaded_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    description = db.Column(db.String(500))  # Опис документу
+    
+    # Зв'язки
+    user = db.relationship('User', foreign_keys=[user_id], backref='documents')
+    uploader = db.relationship('User', foreign_keys=[uploaded_by])
 
 class LeadEditForm(Form):
     deal_name = StringField('Deal name', [validators.DataRequired(), validators.Length(min=2, max=100)])
@@ -848,7 +976,8 @@ def sync_lead_from_hubspot(lead):
         contact = hubspot_client.crm.contacts.basic_api.get_by_id(
             contact_id=lead.hubspot_contact_id,
             properties=[
-                "email", "phone", "phone_number", "firstname", "lastname", "notes_last_contacted", "hs_last_activity_date",
+                "email", "phone", "phone_number", "mobilephone", "hs_phone_number", 
+                "firstname", "lastname", "notes_last_contacted", "hs_last_activity_date",
                 "phone_number_1", "telegram__cloned_", "messenger__cloned_", "birthdate__cloned_", "company",
                 "telegram", "messenger", "birthdate"
             ]
@@ -861,11 +990,37 @@ def sync_lead_from_hubspot(lead):
             if contact.properties.get('firstname') and contact.properties.get('lastname'):
                 lead.deal_name = f"{contact.properties['firstname']} {contact.properties['lastname']}"
             
-            # Оновлюємо основний телефон (спочатку phone_number, потім phone як fallback)
+            # Детальне логування телефонних полів
+            print(f"📞 Телефонні поля з HubSpot:")
+            print(f"   phone: {contact.properties.get('phone')}")
+            print(f"   phone_number: {contact.properties.get('phone_number')}")
+            print(f"   mobilephone: {contact.properties.get('mobilephone')}")
+            print(f"   hs_phone_number: {contact.properties.get('hs_phone_number')}")
+            print(f"   phone_number_1: {contact.properties.get('phone_number_1')}")
+            
+            # Оновлюємо основний телефон (пріоритет: phone_number > mobilephone > hs_phone_number > phone)
+            phone_to_use = None
+            source = None
+            
             if contact.properties.get('phone_number'):
-                lead.phone = contact.properties['phone_number']
+                phone_to_use = contact.properties['phone_number']
+                source = "phone_number"
+            elif contact.properties.get('mobilephone'):
+                phone_to_use = contact.properties['mobilephone']
+                source = "mobilephone"
+            elif contact.properties.get('hs_phone_number'):
+                phone_to_use = contact.properties['hs_phone_number']
+                source = "hs_phone_number"
             elif contact.properties.get('phone'):
-                lead.phone = contact.properties['phone']
+                phone_to_use = contact.properties['phone']
+                source = "phone"
+            
+            if phone_to_use:
+                lead.phone = phone_to_use
+                print(f"✅ Використовуємо {source}: {phone_to_use}")
+                print(f"📱 Оновлено номер ліда: {lead.phone}")
+            else:
+                print(f"⚠️ Жодне phone поле не знайдено в HubSpot!")
             
             # Оновлюємо додаткові контактні дані
             if contact.properties.get('phone_number_1'):
@@ -1156,7 +1311,9 @@ def logout():
 @login_required
 def profile():
     """Сторінка особистого кабінету"""
-    return render_template('profile.html')
+    # Отримуємо документи користувача
+    documents = UserDocument.query.filter_by(user_id=current_user.id).order_by(UserDocument.uploaded_at.desc()).all()
+    return render_template('profile.html', documents=documents)
 
 @app.route('/profile/update', methods=['POST'])
 @login_required
@@ -1455,6 +1612,7 @@ def admin_verify_agent():
     data = request.get_json()
     agent_id = data.get('agent_id')
     approve = data.get('approve', True)
+    commission = data.get('commission')
     
     try:
         agent = User.query.get(agent_id)
@@ -1462,9 +1620,21 @@ def admin_verify_agent():
             return jsonify({'success': False, 'message': 'Агент не знайдено'})
         
         if approve:
+            # Перевірка наявності комісії при верифікації
+            if commission is None:
+                return jsonify({'success': False, 'message': 'Необхідно встановити комісію перед верифікацією'})
+            
+            try:
+                commission = float(commission)
+                if commission < 0 or commission > 100:
+                    return jsonify({'success': False, 'message': 'Комісія має бути від 0% до 100%'})
+            except ValueError:
+                return jsonify({'success': False, 'message': 'Невірний формат комісії'})
+            
+            agent.commission = commission
             agent.is_verified = True
             agent.verification_requested = False
-            message = f'Агент {agent.username} успішно верифікований'
+            message = f'Агент {agent.username} успішно верифікований з комісією {commission}%'
         else:
             agent.is_verified = False
             agent.verification_requested = False
@@ -1567,25 +1737,70 @@ def dashboard_test():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    # Автоматична синхронізація з HubSpot при завантаженні дашборду
-    if hubspot_client:
-        try:
-            sync_all_leads_from_hubspot()
-        except Exception as e:
-            print(f"Помилка автоматичної синхронізації: {e}")
+    # ⚡ ОПТИМІЗАЦІЯ: Видалено автоматичну синхронізацію з HubSpot
+    # Тепер синхронізація доступна через окрему кнопку
     
+    # Імпортуємо необхідні функції для сортування
+    from sqlalchemy import func, case
+    
+    # Отримуємо параметри сортування з URL
+    sort_by = request.args.get('sort_by', 'updated_at')  # За замовчуванням сортуємо по даті оновлення
+    order = request.args.get('order', 'desc')  # За замовчуванням - від нових до старих
+    
+    # Оптимізований запит: отримуємо тільки необхідні ліди
     if current_user.role == 'admin':
-        leads = Lead.query.all()
+        leads_query = Lead.query
     else:
-        leads = Lead.query.filter_by(agent_id=current_user.id).all()
+        leads_query = Lead.query.filter_by(agent_id=current_user.id)
     
-    # Обчислюємо метрики
-    total_leads = len(leads)
-    active_leads = len([lead for lead in leads if lead.status in ['new', 'contacted', 'qualified']])
-    closed_leads = len([lead for lead in leads if lead.status == 'closed'])
-    transferred_leads = len([lead for lead in leads if lead.is_transferred])
+    # Застосовуємо сортування
+    if sort_by == 'status':
+        # Для статусу використовуємо custom порядок: new -> contacted -> qualified -> closed
+        status_order = case(
+            (Lead.status == 'new', 1),
+            (Lead.status == 'contacted', 2),
+            (Lead.status == 'qualified', 3),
+            (Lead.status == 'closed', 4),
+            else_=5
+        )
+        if order == 'asc':
+            leads_query = leads_query.order_by(status_order.asc())
+        else:
+            leads_query = leads_query.order_by(status_order.desc())
+    elif sort_by == 'updated_at':
+        if order == 'asc':
+            leads_query = leads_query.order_by(Lead.updated_at.asc())
+        else:
+            leads_query = leads_query.order_by(Lead.updated_at.desc())
     
-    # Сума всіх бюджетів
+    # Отримуємо ліди для відображення
+    leads = leads_query.all()
+    
+    # ⚡ ОПТИМІЗАЦІЯ: Використовуємо SQL агрегацію замість Python циклів
+    # Базовий запит для метрик
+    if current_user.role == 'admin':
+        metrics_query = db.session.query(
+            func.count(Lead.id).label('total_leads'),
+            func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
+            func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
+            func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
+        )
+    else:
+        metrics_query = db.session.query(
+            func.count(Lead.id).label('total_leads'),
+            func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
+            func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
+            func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
+        ).filter(Lead.agent_id == current_user.id)
+    
+    result = metrics_query.first()
+    
+    total_leads = result.total_leads or 0
+    active_leads = result.active_leads or 0
+    closed_leads = result.closed_leads or 0
+    transferred_leads = result.transferred_leads or 0
+    
+    # Сума бюджетів (потребує завантаження даних, бо budget - строка)
     total_budget = sum(get_budget_value(lead.budget) for lead in leads)
     avg_budget = total_budget / total_leads if total_leads > 0 else 0
     
@@ -1607,7 +1822,7 @@ def dashboard():
         'goal_percentage': goal_percentage
     }
     
-    return render_template('dashboard.html', leads=leads, metrics=metrics)
+    return render_template('dashboard.html', leads=leads, metrics=metrics, sort_by=sort_by, order=order)
 
 @app.route('/add_lead', methods=['GET', 'POST'])
 @login_required
@@ -1633,11 +1848,38 @@ def add_lead():
             except phonenumbers.NumberParseException:
                 return redirect(url_for('add_lead', flash='Невірний формат номера телефону', type='error'))
             
+            # ⚡ ОПТИМІЗАЦІЯ: Спочатку зберігаємо лід в локальній БД для швидкості
+            # Потім асинхронно синхронізуємо з HubSpot
+            
+            # Створюємо лід локально
+            lead = Lead(
+                agent_id=current_user.id,
+                deal_name=form.deal_name.data,
+                email=form.email.data,
+                phone=formatted_phone,
+                budget=form.budget.data,
+                notes=form.notes.data,
+                hubspot_contact_id=None,
+                hubspot_deal_id=None
+            )
+            
+            db.session.add(lead)
+            
+            # Нараховуємо поінти за створення ліда
+            agent = User.query.get(form.agent_id.data)
+            if agent:
+                agent.add_points(100)  # 100 поінтів за лід
+                agent.total_leads += 1
+            
+            # Комітимо зміни в БД ПЕРЕД HubSpot викликами
+            db.session.commit()
+            
             # Ініціалізуємо HubSpot ID як None
             hubspot_contact_id = None
             hubspot_deal_id = None
+            hubspot_sync_success = False
             
-            # Спробуємо створити в HubSpot (якщо API налаштований)
+            # Тепер пробуємо синхронізувати з HubSpot (не блокує відповідь при помилці)
             if hubspot_client:
                 print(f"=== ПОЧАТОК СТВОРЕННЯ КОНТАКТУ В HUBSPOT ===")
                 print(f"Email: {form.email.data}")
@@ -1730,7 +1972,9 @@ def add_lead():
                         "amount": get_budget_value(form.budget.data),
                         "dealtype": "newbusiness",
                         "pipeline": "2341107958",  # Pipeline ID для "Лиды"
-                        "dealstage": "3206423796"  # Стадія ID для "Новая заявка" в pipeline "Лиды"
+                        "dealstage": "3206423796",  # Стадія ID для "Новая заявка" в pipeline "Лиды"
+                        "phone_number": formatted_phone,  # Додаємо номер телефону в угоду
+                        "from_agent_portal__name_": current_user.username  # Ім'я агента, який створив лід
                     }
                     
                     print(f"Властивості угоди: {deal_properties}")
@@ -1765,6 +2009,10 @@ def add_lead():
                         print(f"Contact ID: {hubspot_contact_id}")
                         print(f"Deal ID: {hubspot_deal_id}")
                     
+                    # Синхронізація успішна!
+                    hubspot_sync_success = True
+                    print(f"✅ HubSpot синхронізація успішна! Contact: {hubspot_contact_id}, Deal: {hubspot_deal_id}")
+                    
                 except Exception as hubspot_error:
                     error_msg = str(hubspot_error)
                     print(f"=== ДЕТАЛЬНА ПОМИЛКА HUBSPOT ===")
@@ -1793,35 +2041,21 @@ def add_lead():
                         return redirect(url_for('add_lead', flash=f'Лід додано локально. Помилка HubSpot: {error_msg[:100]}...', type='warning'))
             else:
                 print("HubSpot клієнт не налаштований")
-                return redirect(url_for('add_lead', flash='Лід додано локально. HubSpot API не налаштований.', type='warning'))
             
-            # Зберігаємо лід в локальній базі
-            lead = Lead(
-                agent_id=current_user.id,
-                deal_name=form.deal_name.data,
-                email=form.email.data,
-                phone=formatted_phone,
-                budget=form.budget.data,
-                notes=form.notes.data,
-                hubspot_contact_id=hubspot_contact_id,
-                hubspot_deal_id=hubspot_deal_id
-            )
+            # ⚡ ОПТИМІЗАЦІЯ: Оновлюємо лід з HubSpot ID, якщо синхронізація успішна
+            if hubspot_contact_id or hubspot_deal_id:
+                lead.hubspot_contact_id = hubspot_contact_id
+                lead.hubspot_deal_id = hubspot_deal_id
+                db.session.commit()
+                print(f"Лід #{lead.id} оновлено з HubSpot ID: contact={hubspot_contact_id}, deal={hubspot_deal_id}")
             
-            db.session.add(lead)
-            
-            # Нараховуємо поінти за створення ліда
-            agent = User.query.get(form.agent_id.data)
-            if agent:
-                agent.add_points(100)  # 100 поінтів за лід
-                agent.total_leads += 1
-                print(f"Нараховано 100 поінтів агенту {agent.username} за створення ліда")
-            
-            db.session.commit()
-            
-            if hubspot_contact_id:
-                return redirect(url_for('dashboard', flash='Лід успішно додано та синхронізовано з HubSpot!', type='success'))
+            # Повертаємо відповідь користувачу
+            if hubspot_sync_success and hubspot_contact_id:
+                flash('Лід успішно додано та синхронізовано з HubSpot!', 'success')
             else:
-                return redirect(url_for('dashboard', flash='Лід успішно додано локально!', type='success'))
+                flash('Лід успішно додано локально!', 'success')
+            
+            return redirect(url_for('dashboard'))
             
         except Exception as e:
             return redirect(url_for('add_lead', flash=f'Помилка при додаванні ліда: {str(e)}', type='error'))
@@ -2095,7 +2329,15 @@ def admin_users():
     
     # Отримуємо всіх користувачів (сортуємо за датою створення, найновіші зверху)
     users = User.query.order_by(User.created_at.desc()).all()
-    return render_template('admin_users.html', users=users)
+    
+    # Додаємо кількість документів для кожного користувача
+    users_with_docs = []
+    for user in users:
+        doc_count = UserDocument.query.filter_by(user_id=user.id).count()
+        user.doc_count = doc_count
+        users_with_docs.append(user)
+    
+    return render_template('admin_users.html', users=users_with_docs)
 
 @app.route('/admin/users/<int:user_id>/toggle_status', methods=['POST'])
 @login_required
@@ -2171,6 +2413,369 @@ def unlock_user(user_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
+
+@app.route('/admin/users/<int:user_id>/commission', methods=['POST'])
+@login_required
+def update_user_commission(user_id):
+    """Оновлення комісії користувача"""
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Доступ заборонено'})
+    
+    try:
+        data = request.get_json()
+        commission = data.get('commission')
+        
+        if commission is None:
+            return jsonify({'success': False, 'message': 'Не вказано комісію'})
+        
+        try:
+            commission = float(commission)
+            if commission < 0 or commission > 100:
+                return jsonify({'success': False, 'message': 'Комісія має бути від 0% до 100%'})
+        except ValueError:
+            return jsonify({'success': False, 'message': 'Невірний формат комісії'})
+        
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'Користувач не знайдено'})
+        
+        user.commission = commission
+        db.session.commit()
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Комісію для {user.username} встановлено на {commission}%',
+            'commission': commission
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Помилка при оновленні комісії: {e}")
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
+
+# ===== ДОКУМЕНТИ КОРИСТУВАЧІВ =====
+@app.route('/admin/users/<int:user_id>/documents', methods=['GET'])
+@login_required
+def get_user_documents(user_id):
+    """Отримання списку документів користувача"""
+    if current_user.role != 'admin' and current_user.id != user_id:
+        return jsonify({'success': False, 'message': 'Доступ заборонено'})
+    
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'Користувач не знайдено'})
+        
+        documents = UserDocument.query.filter_by(user_id=user_id).order_by(UserDocument.uploaded_at.desc()).all()
+        
+        docs_list = []
+        for doc in documents:
+            docs_list.append({
+                'id': doc.id,
+                'filename': doc.filename,
+                'file_size': doc.file_size,
+                'file_type': doc.file_type,
+                'uploaded_at': doc.uploaded_at.strftime('%d.%m.%Y %H:%M') if doc.uploaded_at else '',
+                'description': doc.description,
+                'uploader_name': doc.uploader.username if doc.uploader else 'Невідомо'
+            })
+        
+        return jsonify({'success': True, 'documents': docs_list, 'username': user.username})
+        
+    except Exception as e:
+        app.logger.error(f"Помилка при отриманні документів: {e}")
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
+
+@app.route('/admin/users/<int:user_id>/documents', methods=['POST'])
+@login_required
+def upload_user_document(user_id):
+    """Завантаження документу користувача в S3"""
+    app.logger.info(f"📥 === ПОЧАТОК ЗАВАНТАЖЕННЯ ДОКУМЕНТУ ===")
+    app.logger.info(f"   User ID: {user_id}")
+    app.logger.info(f"   Current User: {current_user.username} (role: {current_user.role})")
+    
+    if current_user.role != 'admin':
+        app.logger.warning(f"❌ Доступ заборонено для {current_user.username}")
+        return jsonify({'success': False, 'message': 'Доступ заборонено'})
+    
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            app.logger.error(f"❌ Користувач з ID {user_id} не знайдено")
+            return jsonify({'success': False, 'message': 'Користувач не знайдено'})
+        
+        app.logger.info(f"✅ Користувач знайдено: {user.username}")
+        
+        if 'file' not in request.files:
+            app.logger.error("❌ Файл не знайдено в request.files")
+            app.logger.error(f"   Доступні ключі: {list(request.files.keys())}")
+            return jsonify({'success': False, 'message': 'Файл не знайдено'})
+        
+        file = request.files['file']
+        app.logger.info(f"✅ Файл отримано з request")
+        
+        if file.filename == '':
+            app.logger.error("❌ Ім'я файлу порожнє")
+            return jsonify({'success': False, 'message': 'Файл не вибрано'})
+        
+        # Генеруємо унікальне ім'я файлу
+        import uuid
+        from werkzeug.utils import secure_filename
+        
+        original_filename = secure_filename(file.filename)
+        file_extension = os.path.splitext(original_filename)[1]
+        unique_filename = f"user_documents/{user_id}/{uuid.uuid4().hex}{file_extension}"
+        
+        app.logger.info(f"📄 Інформація про файл:")
+        app.logger.info(f"   Оригінальна назва: {original_filename}")
+        app.logger.info(f"   Розширення: {file_extension}")
+        app.logger.info(f"   Унікальна назва: {unique_filename}")
+        app.logger.info(f"   Content-Type: {file.content_type}")
+        
+        # Отримуємо розмір файлу
+        file.seek(0, 2)  # Переміщуємось в кінець файлу
+        file_size = file.tell()
+        file.seek(0)  # Повертаємось на початок
+        
+        app.logger.info(f"   Розмір файлу: {file_size} bytes ({file_size/1024/1024:.2f} MB)")
+        
+        if file_size > 10 * 1024 * 1024:
+            app.logger.error(f"❌ Файл занадто великий: {file_size/1024/1024:.2f} MB")
+            return jsonify({'success': False, 'message': 'Файл занадто великий (макс. 10MB)'})
+        
+        # Завантажуємо файл в S3
+        app.logger.info("🚀 Початок завантаження в S3...")
+        s3_url = upload_file_to_s3(file, unique_filename)
+        app.logger.info(f"✅ Файл завантажено в S3: {s3_url}")
+        
+        # Створюємо запис в БД
+        app.logger.info("💾 Створення запису в БД...")
+        document = UserDocument(
+            user_id=user_id,
+            filename=original_filename,
+            file_path=unique_filename,  # Зберігаємо шлях в S3
+            file_size=file_size,
+            file_type=file.content_type,
+            uploaded_by=current_user.id,
+            description=request.form.get('description', '')
+        )
+        
+        db.session.add(document)
+        db.session.commit()
+        
+        app.logger.info(f"✅ Запис створено в БД (ID: {document.id})")
+        app.logger.info(f"🎉 === ЗАВАНТАЖЕННЯ ЗАВЕРШЕНО УСПІШНО ===")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Документ "{original_filename}" успішно завантажено в S3',
+            'document': {
+                'id': document.id,
+                'filename': document.filename,
+                'file_size': document.file_size,
+                'uploaded_at': document.uploaded_at.strftime('%d.%m.%Y %H:%M')
+            }
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"❌❌❌ КРИТИЧНА ПОМИЛКА ❌❌❌")
+        app.logger.error(f"   Тип помилки: {type(e).__name__}")
+        app.logger.error(f"   Повідомлення: {str(e)}")
+        import traceback
+        app.logger.error(f"   Traceback:\n{traceback.format_exc()}")
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
+
+@app.route('/admin/users/<int:user_id>/documents/<int:doc_id>', methods=['DELETE'])
+@login_required
+def delete_user_document(user_id, doc_id):
+    """Видалення документу користувача з S3"""
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Доступ заборонено'})
+    
+    try:
+        document = UserDocument.query.filter_by(id=doc_id, user_id=user_id).first()
+        if not document:
+            return jsonify({'success': False, 'message': 'Документ не знайдено'})
+        
+        # Видаляємо файл з S3
+        delete_file_from_s3(document.file_path)
+        
+        filename = document.filename
+        db.session.delete(document)
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': f'Документ "{filename}" видалено з S3'})
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Помилка при видаленні документу: {e}")
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
+
+# ===== ВАЛІДАЦІЯ ТЕЛЕФОННИХ НОМЕРІВ =====
+@app.route('/api/check-phone', methods=['POST'])
+@login_required
+def check_phone_number():
+    """Real-time перевірка номера телефону на дублікати"""
+    try:
+        data = request.get_json()
+        phone_input = data.get('phone', '').strip()
+        
+        # Логування для діагностики
+        app.logger.info(f"🔍 Перевірка номера: '{phone_input}'")
+        
+        # Мінімум 4 цифри для пошуку (оптимізація)
+        if not phone_input or len(phone_input) < 4:
+            return jsonify({
+                'count': 0,
+                'matches': [],
+                'message': 'Введіть мінімум 4 символи'
+            })
+        
+        # Очищаємо номер від спец символів для пошуку
+        clean_phone = ''.join(filter(str.isdigit, phone_input))
+        
+        if len(clean_phone) < 4:
+            return jsonify({
+                'count': 0,
+                'matches': [],
+                'message': 'Введіть мінімум 4 цифри'
+            })
+        
+        app.logger.info(f"   Очищений номер: '{clean_phone}'")
+        
+        # Шукаємо ліди з схожими номерами
+        # Очищаємо номери в БД від нецифрових символів (пробіли, дефіси, плюси тощо)
+        # і порівнюємо з очищеним введеним номером
+        matching_leads = Lead.query.filter(
+            func.regexp_replace(Lead.phone, '[^0-9]', '', 'g').like(f'%{clean_phone}%')
+        ).limit(10).all()
+        
+        app.logger.info(f"   Знайдено збігів: {len(matching_leads)}")
+        
+        # Додаткове логування для діагностики
+        if matching_leads:
+            for lead in matching_leads[:3]:  # Перші 3 для перевірки
+                app.logger.info(f"      Знайдено: {lead.deal_name} - {lead.phone}")
+        
+        # Формуємо результат
+        matches = []
+        for lead in matching_leads:
+            matches.append({
+                'id': lead.id,
+                'name': lead.deal_name,
+                'phone': lead.phone,
+                'email': lead.email,
+                'status': lead.status,
+                'agent': lead.agent.username if lead.agent else 'Не призначено',
+                'created_at': lead.created_at.strftime('%d.%m.%Y') if lead.created_at else ''
+            })
+        
+        return jsonify({
+            'success': True,
+            'count': len(matching_leads),
+            'matches': matches,
+            'search_term': phone_input
+        })
+        
+    except Exception as e:
+        app.logger.error(f"❌ Помилка при перевірці номера: {e}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'count': 0,
+            'matches': [],
+            'message': f'Помилка: {str(e)}'
+        })
+
+@app.route('/admin/test-s3')
+@login_required
+def test_s3_connection():
+    """Тестування підключення до S3"""
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Доступ заборонено'})
+    
+    app.logger.info("🧪 === ТЕСТ S3 ПІДКЛЮЧЕННЯ ===")
+    
+    try:
+        s3_client = get_s3_client()
+        if not s3_client:
+            return jsonify({
+                'success': False,
+                'message': 'S3 клієнт не створено - перевірте змінні середовища',
+                'config': {
+                    'AWS_ACCESS_KEY_ID': '✅' if app.config.get('AWS_ACCESS_KEY_ID') else '❌',
+                    'AWS_SECRET_ACCESS_KEY': '✅' if app.config.get('AWS_SECRET_ACCESS_KEY') else '❌',
+                    'AWS_S3_BUCKET': app.config.get('AWS_S3_BUCKET', '❌ не встановлено'),
+                    'AWS_REGION': app.config.get('AWS_REGION', 'за замовчуванням')
+                }
+            })
+        
+        # Тестуємо список об'єктів
+        bucket = app.config['AWS_S3_BUCKET']
+        app.logger.info(f"   Перевіряємо bucket: {bucket}")
+        
+        response = s3_client.list_objects_v2(Bucket=bucket, MaxKeys=1)
+        app.logger.info(f"✅ Успішно підключено до S3!")
+        
+        return jsonify({
+            'success': True,
+            'message': 'S3 налаштовано правильно!',
+            'config': {
+                'AWS_S3_BUCKET': bucket,
+                'AWS_REGION': app.config['AWS_REGION'],
+                'objects_count': response.get('KeyCount', 0)
+            }
+        })
+        
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+        error_message = e.response.get('Error', {}).get('Message', 'Unknown')
+        app.logger.error(f"❌ S3 ClientError: {error_code} - {error_message}")
+        
+        return jsonify({
+            'success': False,
+            'message': f'Помилка S3: {error_code}',
+            'details': error_message
+        })
+    except Exception as e:
+        app.logger.error(f"❌ Загальна помилка: {type(e).__name__}: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Помилка: {str(e)}'
+        })
+
+@app.route('/documents/<int:doc_id>/download')
+@login_required
+def download_document(doc_id):
+    """Завантаження документу з S3"""
+    try:
+        document = UserDocument.query.get(doc_id)
+        if not document:
+            flash('Документ не знайдено', 'error')
+            return redirect(url_for('profile'))
+        
+        # Перевірка доступу: адмін або власник документу
+        if current_user.role != 'admin' and current_user.id != document.user_id:
+            flash('Доступ заборонено', 'error')
+            return redirect(url_for('profile'))
+        
+        # Завантажуємо файл з S3
+        file_obj = download_file_from_s3(document.file_path)
+        
+        from flask import send_file
+        return send_file(
+            file_obj,
+            as_attachment=True,
+            download_name=document.filename,
+            mimetype=document.file_type or 'application/octet-stream'
+        )
+        
+    except Exception as e:
+        app.logger.error(f"Помилка при завантаженні документу: {e}")
+        flash('Помилка при завантаженні документу з S3', 'error')
+        return redirect(url_for('profile'))
 
 # ===== ERROR HANDLERS =====
 @app.errorhandler(Exception)

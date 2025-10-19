@@ -102,7 +102,7 @@
                         </thead>
                         <tbody>
                             {% for agent in pending_requests %}
-                            <tr>
+                            <tr data-agent-id="{{ agent.id }}">
                                 <td>
                                     <div class="user-info">
                                         <div class="user-avatar">
@@ -194,7 +194,7 @@
                         </thead>
                         <tbody>
                             {% for agent in all_agents %}
-                            <tr class="lead-row">
+                            <tr class="lead-row" data-agent-id="{{ agent.id }}">
                                 <td class="col-deal">
                                     <div class="agent-cell">
                                         <i class="fas fa-user-circle"></i>
@@ -267,6 +267,86 @@
     </div>
 </div>
 
+<!-- Модалка для верифікації агента з встановленням комісії -->
+<div id="verificationModal" class="modal" style="display: none;">
+    <div class="modal-overlay" onclick="closeVerificationModal()"></div>
+    <div class="modal-content" style="max-width: 550px;">
+        <div class="modal-header">
+            <h3 id="verificationModalTitle">
+                <i class="fas fa-shield-alt" style="color: var(--sidebar-primary);"></i>
+                Верифікація агента
+            </h3>
+            <button class="modal-close" onclick="closeVerificationModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div id="verificationApproveContent">
+                <p style="margin-bottom: 1.5rem; color: var(--sidebar-text-muted);">
+                    Ви збираєтесь верифікувати агента <strong id="verificationAgentName"></strong>
+                </p>
+                
+                <div class="alert-info" style="background: #dbeafe; border: 1px solid #93c5fd; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem;">
+                    <i class="fas fa-info-circle" style="color: #1e40af;"></i>
+                    <span style="color: #1e40af; font-weight: 500;">Для верифікації необхідно встановити комісію агента</span>
+                </div>
+                
+                <div class="form-group">
+                    <label for="verificationCommissionInput" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">
+                        Комісія агента (%) <span style="color: #ef4444;">*</span>
+                    </label>
+                    <div style="position: relative;">
+                        <input 
+                            type="number" 
+                            id="verificationCommissionInput" 
+                            class="form-control" 
+                            placeholder="Введіть відсоток (0-100)" 
+                            min="0" 
+                            max="100" 
+                            step="0.1"
+                            style="padding-right: 3rem;"
+                            required
+                        >
+                        <span style="position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); color: var(--sidebar-text-muted); font-weight: 500;">%</span>
+                    </div>
+                    <small style="display: block; margin-top: 0.5rem; color: var(--sidebar-text-muted);">
+                        Обов'язкове поле. Введіть значення від 0 до 100
+                    </small>
+                </div>
+                
+                <!-- Швидкі кнопки -->
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem;">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="setVerificationCommission(0)">0%</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="setVerificationCommission(2)">2%</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="setVerificationCommission(3)">3%</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="setVerificationCommission(5)">5%</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="setVerificationCommission(10)">10%</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="setVerificationCommission(15)">15%</button>
+                </div>
+            </div>
+            
+            <div id="verificationRejectContent" style="display: none;">
+                <p style="margin-bottom: 1rem; color: var(--sidebar-text-muted);">
+                    Ви збираєтесь відхилити запит на верифікацію від агента <strong id="verificationAgentNameReject"></strong>
+                </p>
+                <div class="alert-warning" style="background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 1rem;">
+                    <i class="fas fa-exclamation-triangle" style="color: #d97706;"></i>
+                    <span style="color: #d97706; font-weight: 500;">Ця дія не може бути скасована</span>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeVerificationModal()">
+                Скасувати
+            </button>
+            <button id="verificationConfirmBtn" class="btn btn-primary" onclick="confirmVerification()" disabled>
+                <i class="fas fa-check"></i>
+                <span id="verificationBtnText">Верифікувати</span>
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- Модальне вікно для деталей агента -->
 <div class="modal fade" id="agentDetailsModal" tabindex="-1" aria-labelledby="agentDetailsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -288,6 +368,9 @@
 </div>
 
 <script>
+let currentVerificationAgentId = null;
+let currentVerificationApprove = null;
+
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
     const mainContent = document.getElementById('mainContent');
@@ -296,28 +379,121 @@ function toggleSidebar() {
 }
 
 function verifyAgent(agentId, approve) {
-    const action = approve ? 'верифікувати' : 'відхилити';
-    if (!confirm(`Ви впевнені, що хочете ${action} цього агента?`)) {
+    // Зберігаємо дані для верифікації
+    currentVerificationAgentId = agentId;
+    currentVerificationApprove = approve;
+    
+    // Отримуємо ім'я агента з таблиці
+    const agentNameCell = document.querySelector(`tr:has(button[onclick*="verifyAgent(${agentId},"]) .user-name, tr:has(button[onclick*="verifyAgent(${agentId},"]) .agent-cell span`);
+    const agentName = agentNameCell ? agentNameCell.textContent.trim() : 'агента';
+    
+    const confirmBtn = document.getElementById('verificationConfirmBtn');
+    
+    // Налаштовуємо модалку в залежності від дії
+    if (approve) {
+        // Верифікація - показуємо форму з комісією
+        document.getElementById('verificationModalTitle').innerHTML = '<i class="fas fa-shield-alt" style="color: var(--sidebar-primary);"></i> Верифікація агента';
+        document.getElementById('verificationApproveContent').style.display = 'block';
+        document.getElementById('verificationRejectContent').style.display = 'none';
+        document.getElementById('verificationAgentName').textContent = agentName;
+        document.getElementById('verificationCommissionInput').value = '';
+        document.getElementById('verificationBtnText').textContent = 'Верифікувати';
+        confirmBtn.className = 'btn btn-primary';
+        confirmBtn.innerHTML = '<i class="fas fa-check"></i> <span id="verificationBtnText">Верифікувати</span>';
+        confirmBtn.disabled = true; // Кнопка неактивна без комісії
+        confirmBtn.style.background = '';
+        
+        // Фокус на input
+        setTimeout(() => {
+            document.getElementById('verificationCommissionInput').focus();
+        }, 100);
+    } else {
+        // Відхилення - проста підтвердження
+        document.getElementById('verificationModalTitle').innerHTML = '<i class="fas fa-times-circle" style="color: #ef4444;"></i> Відхилити верифікацію';
+        document.getElementById('verificationApproveContent').style.display = 'none';
+        document.getElementById('verificationRejectContent').style.display = 'block';
+        document.getElementById('verificationAgentNameReject').textContent = agentName;
+        document.getElementById('verificationBtnText').textContent = 'Відхилити';
+        confirmBtn.className = 'btn btn-primary';
+        confirmBtn.style.background = '#ef4444';
+        confirmBtn.innerHTML = '<i class="fas fa-times"></i> <span id="verificationBtnText">Відхилити</span>';
+        confirmBtn.disabled = false; // Для відхилення кнопка активна
+    }
+    
+    // Показуємо модалку
+    document.getElementById('verificationModal').style.display = 'flex';
+}
+
+function closeVerificationModal() {
+    document.getElementById('verificationModal').style.display = 'none';
+    currentVerificationAgentId = null;
+    currentVerificationApprove = null;
+}
+
+function setVerificationCommission(value) {
+    document.getElementById('verificationCommissionInput').value = value;
+    checkCommissionInput(); // Перевіряємо і активуємо кнопку
+}
+
+function checkCommissionInput() {
+    const commissionInput = document.getElementById('verificationCommissionInput');
+    const confirmBtn = document.getElementById('verificationConfirmBtn');
+    const value = commissionInput.value.trim();
+    
+    // Активуємо кнопку тільки якщо введено коректне значення
+    if (value !== '' && !isNaN(value) && parseFloat(value) >= 0 && parseFloat(value) <= 100) {
+        confirmBtn.disabled = false;
+    } else {
+        confirmBtn.disabled = true;
+    }
+}
+
+function confirmVerification() {
+    if (currentVerificationApprove === null || currentVerificationAgentId === null) {
         return;
     }
     
+    let commission = null;
+    
+    // Перевірка комісії для approve
+    if (currentVerificationApprove) {
+        commission = document.getElementById('verificationCommissionInput').value;
+        
+        if (commission === '' || isNaN(commission)) {
+            showNotification('Будь ласка, введіть комісію для верифікації агента', 'error');
+            document.getElementById('verificationCommissionInput').focus();
+            return;
+        }
+        
+        const commissionNum = parseFloat(commission);
+        if (commissionNum < 0 || commissionNum > 100) {
+            showNotification('Комісія має бути від 0% до 100%', 'error');
+            return;
+        }
+        
+        commission = commissionNum;
+    }
+    
+    // Відправляємо запит
     fetch('/admin/verify_agent', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-            agent_id: agentId,
-            approve: approve
+            agent_id: currentVerificationAgentId,
+            approve: currentVerificationApprove,
+            commission: commission
         })
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
             showNotification(data.message, 'success');
-            setTimeout(() => {
-                location.reload();
-            }, 2000);
+            closeVerificationModal();
+            
+            // Оновлюємо UI без перезавантаження
+            updateAgentStatus(currentVerificationAgentId, currentVerificationApprove);
         } else {
             showNotification(data.message, 'error');
         }
@@ -326,6 +502,174 @@ function verifyAgent(agentId, approve) {
         console.error('Error:', error);
         showNotification('Помилка при обробці запиту', 'error');
     });
+}
+
+function updateAgentStatus(agentId, wasApproved) {
+    // Знаходимо всі рядки з цим агентом за data-agent-id
+    const rows = document.querySelectorAll(`tr[data-agent-id="${agentId}"]`);
+    
+    console.log(`Оновлюємо агента ${agentId}, знайдено рядків: ${rows.length}, approved: ${wasApproved}`);
+    
+    rows.forEach(row => {
+        if (wasApproved) {
+            // Оновлюємо статус верифікації
+            const statusCell = row.querySelector('.col-status');
+            console.log('Знайдено statusCell:', statusCell);
+            if (statusCell) {
+                statusCell.innerHTML = `
+                    <span class="status-badge" style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;">
+                        <i class="fas fa-check-circle"></i>
+                        <span>Верифікований</span>
+                    </span>
+                `;
+                console.log('Статус оновлено на "Верифікований"');
+            } else {
+                console.log('statusCell не знайдено для рядка');
+            }
+            
+            // Оновлюємо кнопки дій
+            const actionsCell = row.querySelector('.col-actions .lead-actions');
+            if (actionsCell) {
+                console.log('Знайдено actionsCell, шукаємо кнопку верифікації...');
+                // Шукаємо будь-яку кнопку верифікації (може бути success або warning)
+                let verifyBtn = actionsCell.querySelector('button.success');
+                if (!verifyBtn) {
+                    verifyBtn = actionsCell.querySelector('button[onclick*="verifyAgent"]');
+                }
+                
+                if (verifyBtn) {
+                    console.log('Змінюємо кнопку на "Скасувати верифікацію"');
+                    verifyBtn.className = 'action-btn warning';
+                    verifyBtn.title = 'Скасувати верифікацію';
+                    verifyBtn.innerHTML = '<i class="fas fa-undo"></i>';
+                    verifyBtn.setAttribute('onclick', `verifyAgent(${agentId}, false)`);
+                } else {
+                    console.log('Кнопку верифікації не знайдено');
+                }
+            } else {
+                console.log('actionsCell не знайдено');
+            }
+            
+            // Видаляємо рядок з секції "Запити на верифікацію" якщо він там
+            const pendingSection = row.closest('tbody')?.closest('.form-container');
+            if (pendingSection?.querySelector('h3')?.textContent.includes('Запити на верифікацію')) {
+                row.style.transition = 'opacity 0.3s ease';
+                row.style.opacity = '0';
+                setTimeout(() => {
+                    row.remove();
+                    
+                    // Перевіряємо чи залишились ще рядки
+                    const remainingRows = pendingSection.querySelectorAll('tbody tr');
+                    if (remainingRows.length === 0) {
+                        // Якщо немає більше запитів - ховаємо всю секцію
+                        pendingSection.style.transition = 'opacity 0.3s ease';
+                        pendingSection.style.opacity = '0';
+                        setTimeout(() => pendingSection.remove(), 300);
+                    } else {
+                        // Оновлюємо лічильник
+                        const countHeader = pendingSection.querySelector('h3');
+                        if (countHeader) {
+                            countHeader.textContent = `Запити на верифікацію (${remainingRows.length})`;
+                        }
+                    }
+                }, 300);
+            }
+        } else {
+            // Відхилення верифікації
+            const statusCell = row.querySelector('.col-status');
+            console.log('Знайдено statusCell для відхилення:', statusCell);
+            if (statusCell) {
+                statusCell.innerHTML = `
+                    <span class="status-badge" style="background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5;">
+                        <i class="fas fa-times-circle"></i>
+                        <span>Не верифікований</span>
+                    </span>
+                `;
+                console.log('Статус оновлено на "Не верифікований"');
+            } else {
+                console.log('statusCell не знайдено для відхилення');
+            }
+            
+            // Оновлюємо кнопки дій
+            const actionsCell = row.querySelector('.col-actions .lead-actions');
+            if (actionsCell) {
+                console.log('Знайдено actionsCell для відхилення, шукаємо кнопку...');
+                // Шукаємо кнопку скасування
+                let rejectBtn = actionsCell.querySelector('button.warning');
+                if (!rejectBtn) {
+                    rejectBtn = actionsCell.querySelector('button[onclick*="verifyAgent"]');
+                }
+                
+                if (rejectBtn) {
+                    console.log('Змінюємо кнопку на "Верифікувати"');
+                    rejectBtn.className = 'action-btn success';
+                    rejectBtn.title = 'Верифікувати';
+                    rejectBtn.innerHTML = '<i class="fas fa-check"></i>';
+                    rejectBtn.setAttribute('onclick', `verifyAgent(${agentId}, true)`);
+                } else {
+                    console.log('Кнопку скасування не знайдено');
+                }
+            } else {
+                console.log('actionsCell для відхилення не знайдено');
+            }
+            
+            // Видаляємо рядок з секції "Запити на верифікацію" якщо він там
+            const pendingSection = row.closest('tbody')?.closest('.form-container');
+            if (pendingSection?.querySelector('h3')?.textContent.includes('Запити на верифікацію')) {
+                row.style.transition = 'opacity 0.3s ease';
+                row.style.opacity = '0';
+                setTimeout(() => {
+                    row.remove();
+                    
+                    const remainingRows = pendingSection.querySelectorAll('tbody tr');
+                    if (remainingRows.length === 0) {
+                        pendingSection.style.transition = 'opacity 0.3s ease';
+                        pendingSection.style.opacity = '0';
+                        setTimeout(() => pendingSection.remove(), 300);
+                    } else {
+                        const countHeader = pendingSection.querySelector('h3');
+                        if (countHeader) {
+                            countHeader.textContent = `Запити на верифікацію (${remainingRows.length})`;
+                        }
+                    }
+                }, 300);
+            }
+        }
+    });
+    
+    // Оновлюємо статистичні картки
+    updateStatCards();
+}
+
+function updateStatCards() {
+    // Перераховуємо статистику
+    const allAgentsTable = document.querySelector('.form-container:last-child tbody');
+    if (!allAgentsTable) return;
+    
+    const allRows = allAgentsTable.querySelectorAll('tr');
+    let verified = 0;
+    let pending = 0;
+    let unverified = 0;
+    
+    allRows.forEach(row => {
+        const statusBadge = row.querySelector('.status-badge');
+        if (statusBadge) {
+            const statusText = statusBadge.textContent.trim();
+            if (statusText.includes('Верифікований')) {
+                verified++;
+            } else if (statusText.includes('Очікує')) {
+                pending++;
+            } else {
+                unverified++;
+            }
+        }
+    });
+    
+    // Оновлюємо картки
+    const statsCards = document.querySelectorAll('.stats-card h4');
+    if (statsCards[0]) statsCards[0].textContent = pending; // Очікують
+    if (statsCards[1]) statsCards[1].textContent = verified; // Верифіковані
+    if (statsCards[2]) statsCards[2].textContent = unverified; // Не верифіковані
 }
 
 function viewAgentDetails(agentId) {
@@ -372,5 +716,28 @@ function showNotification(message, type = 'info') {
         setTimeout(() => notification.remove(), 300);
     }, 4000);
 }
+
+// Підтримка Enter та Escape для модалки
+document.addEventListener('DOMContentLoaded', function() {
+    const commissionInput = document.getElementById('verificationCommissionInput');
+    if (commissionInput) {
+        // Перевірка при введенні
+        commissionInput.addEventListener('input', checkCommissionInput);
+        
+        // Enter для підтвердження
+        commissionInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                confirmVerification();
+            }
+        });
+    }
+    
+    // Закриття модалки по Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeVerificationModal();
+        }
+    });
+});
 </script>
 {% endblock %}

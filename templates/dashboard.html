@@ -108,9 +108,18 @@
                                 <i class="fas fa-dollar-sign"></i>
                                 <span>Бюджет</span>
                             </th>
-                            <th class="col-status">
+                            <th class="col-status sortable" onclick="sortTable('status')" style="cursor: pointer;">
                                 <i class="fas fa-info-circle"></i>
                                 <span>Статус</span>
+                                {% if sort_by == 'status' %}
+                                    {% if order == 'asc' %}
+                                        <i class="fas fa-sort-up sort-icon"></i>
+                                    {% else %}
+                                        <i class="fas fa-sort-down sort-icon"></i>
+                                    {% endif %}
+                                {% else %}
+                                    <i class="fas fa-sort sort-icon" style="opacity: 0.3;"></i>
+                                {% endif %}
                             </th>
                             <th class="col-updated">
                                 <i class="fas fa-clock"></i>
@@ -237,6 +246,26 @@ function toggleSidebar() {
         sidebar.classList.toggle('collapsed');
         mainContent.classList.toggle('sidebar-collapsed');
     }
+}
+
+// Функція сортування таблиці
+function sortTable(column) {
+    const currentUrl = new URL(window.location.href);
+    const currentSortBy = currentUrl.searchParams.get('sort_by');
+    const currentOrder = currentUrl.searchParams.get('order') || 'desc';
+    
+    // Якщо клікнули на ту ж колонку - змінюємо порядок
+    if (currentSortBy === column) {
+        const newOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+        currentUrl.searchParams.set('order', newOrder);
+    } else {
+        // Якщо нова колонка - встановлюємо desc за замовчуванням
+        currentUrl.searchParams.set('sort_by', column);
+        currentUrl.searchParams.set('order', 'desc');
+    }
+    
+    // Перенаправляємо на нову URL
+    window.location.href = currentUrl.toString();
 }
 
 // Refresh table functionality

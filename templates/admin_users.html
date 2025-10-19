@@ -186,6 +186,10 @@
                                     <i class="fas fa-chart-bar"></i>
                                     <span>Статистика</span>
                                 </th>
+                                <th class="col-budget">
+                                    <i class="fas fa-percent"></i>
+                                    <span>Комісія</span>
+                                </th>
                                 <th class="col-actions">
                                     <i class="fas fa-cogs"></i>
                                     <span>Дії</span>
@@ -250,9 +254,28 @@
                                         Рівень: <strong style="color: var(--sidebar-text);">{{ user.get_level_display_name() }}</strong>
                                     </div>
                                 </td>
+                                <td class="col-budget">
+                                    <div id="commission-{{ user.id }}" style="font-size: 0.875rem;">
+                                        <strong style="color: var(--sidebar-primary); font-size: 1rem;">{{ user.commission or 0 }}%</strong>
+                                    </div>
+                                </td>
                                 <td class="col-actions">
                                     <div class="lead-actions">
                                         {% if user.id != current_user.id %}
+                                            <button class="action-btn info" 
+                                                    onclick="openCommissionModal({{ user.id }}, '{{ user.username }}', {{ user.commission or 0 }})" 
+                                                    title="Встановити комісію">
+                                                <i class="fas fa-dollar-sign"></i>
+                                            </button>
+                                            
+                                            <button class="action-btn {% if user.doc_count > 0 %}success{% else %}danger{% endif %}" 
+                                                    data-user-id="{{ user.id }}"
+                                                    data-doc-button="true"
+                                                    onclick="openDocumentsModal({{ user.id }}, '{{ user.username }}')" 
+                                                    title="Документи ({{ user.doc_count }})">
+                                                <i class="fas fa-file-alt"></i>
+                                            </button>
+                                            
                                             <button class="action-btn {% if user.is_active %}warning{% else %}success{% endif %}" 
                                                     onclick="toggleUserStatus({{ user.id }})" 
                                                     title="{% if user.is_active %}Деактивувати{% else %}Активувати{% endif %}">
@@ -287,7 +310,151 @@
     </div>
 </div>
 
+<!-- Модалка для встановлення комісії -->
+<div id="commissionModal" class="modal" style="display: none;">
+    <div class="modal-overlay" onclick="closeCommissionModal()"></div>
+    <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+            <h3>
+                <i class="fas fa-dollar-sign" style="color: var(--sidebar-primary);"></i>
+                Встановити комісію
+            </h3>
+            <button class="modal-close" onclick="closeCommissionModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom: 1.5rem; color: var(--sidebar-text-muted);">
+                Встановіть відсоток комісії для агента <strong id="modalUsername"></strong>
+            </p>
+            
+            <div class="form-group">
+                <label for="commissionInput" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">
+                    Комісія (%)
+                </label>
+                <div style="position: relative;">
+                    <input 
+                        type="number" 
+                        id="commissionInput" 
+                        class="form-control" 
+                        placeholder="Введіть відсоток (0-100)" 
+                        min="0" 
+                        max="100" 
+                        step="0.1"
+                        style="padding-right: 3rem;"
+                    >
+                    <span style="position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); color: var(--sidebar-text-muted); font-weight: 500;">%</span>
+                </div>
+                <small style="display: block; margin-top: 0.5rem; color: var(--sidebar-text-muted);">
+                    Введіть значення від 0 до 100
+                </small>
+            </div>
+            
+            <!-- Швидкі кнопки -->
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem;">
+                <button class="btn btn-sm btn-outline-secondary" onclick="setCommissionValue(0)">0%</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="setCommissionValue(2)">2%</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="setCommissionValue(3)">3%</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="setCommissionValue(5)">5%</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="setCommissionValue(10)">10%</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="setCommissionValue(15)">15%</button>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeCommissionModal()">
+                Скасувати
+            </button>
+            <button class="btn btn-primary" onclick="saveCommission()">
+                <i class="fas fa-save"></i>
+                Зберегти
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Модалка управління документами -->
+<div id="documentsModal" class="modal" style="display: none;">
+    <div class="modal-overlay" onclick="closeDocumentsModal()"></div>
+    <div class="modal-content" style="max-width: 700px;">
+        <div class="modal-header">
+            <h3>
+                <i class="fas fa-file-alt" style="color: var(--sidebar-primary);"></i>
+                Документи користувача
+            </h3>
+            <button class="modal-close" onclick="closeDocumentsModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div style="margin-bottom: 1.5rem;">
+                <p style="color: var(--sidebar-text-muted); margin-bottom: 0.5rem;">
+                    Користувач: <strong id="documentsUsername" style="color: var(--sidebar-text);"></strong>
+                </p>
+            </div>
+            
+            <!-- Форма завантаження нового документу -->
+            <div style="background: #f8fafc; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem;">
+                <h4 style="margin: 0 0 1rem 0; font-size: 0.95rem; color: var(--sidebar-text);">
+                    <i class="fas fa-upload"></i> Додати документ
+                </h4>
+                <form id="uploadDocumentForm" enctype="multipart/form-data">
+                    <div style="position: relative;">
+                        <input 
+                            type="file" 
+                            id="documentFile" 
+                            name="file" 
+                            style="display: none;"
+                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.txt"
+                            onchange="updateFileName()"
+                        >
+                        <div style="display: flex; gap: 0.75rem; align-items: center;">
+                            <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('documentFile').click()" style="white-space: nowrap;">
+                                <i class="fas fa-folder-open"></i> Вибрати файл
+                            </button>
+                            <span id="selectedFileName" style="flex: 1; color: var(--sidebar-text-muted); font-size: 0.875rem; font-style: italic;">
+                                Файл не вибрано
+                            </span>
+                            <button type="button" id="clearFileBtn" class="btn btn-sm btn-outline-secondary" onclick="clearSelectedFile()" style="display: none;">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <small style="display: block; margin-top: 0.75rem; color: var(--sidebar-text-muted);">
+                        <i class="fas fa-info-circle"></i> Підтримувані формати: PDF, DOC, DOCX, JPG, PNG, TXT (макс. 10MB)
+                    </small>
+                </form>
+            </div>
+            
+            <!-- Список документів -->
+            <div id="documentsList">
+                <h4 style="margin: 0 0 1rem 0; font-size: 0.95rem; color: var(--sidebar-text);">
+                    <i class="fas fa-list"></i> Список документів
+                </h4>
+                <div id="documentsListContent">
+                    <div style="text-align: center; padding: 2rem; color: var(--sidebar-text-muted);">
+                        <i class="fas fa-spinner fa-spin fa-2x"></i>
+                        <p style="margin-top: 1rem;">Завантаження...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeDocumentsModal()">
+                <i class="fas fa-times"></i>
+                Скасувати
+            </button>
+            <button class="btn btn-primary" onclick="saveDocumentChanges()">
+                <i class="fas fa-save"></i>
+                Save Changes
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
+let currentUserId = null;
+let currentDocumentsUserId = null;
+
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
     const mainContent = document.getElementById('mainContent');
@@ -306,9 +473,9 @@ function toggleUserStatus(userId) {
     .then(data => {
         if (data.success) {
             showNotification(data.message, 'success');
-            setTimeout(() => {
-                location.reload();
-            }, 2000);
+            
+            // Динамічно оновлюємо статус без перезавантаження
+            updateUserStatusUI(userId);
         } else {
             showNotification(data.message, 'error');
         }
@@ -317,6 +484,55 @@ function toggleUserStatus(userId) {
         console.error('Error:', error);
         showNotification('Помилка при зміні статусу користувача', 'error');
     });
+}
+
+function updateUserStatusUI(userId) {
+    // Знаходимо рядок користувача
+    const row = document.querySelector(`tr:has(button[onclick*="toggleUserStatus(${userId})"])`);
+    if (!row) return;
+    
+    // Знаходимо комірку статусу
+    const statusCell = row.querySelectorAll('.col-budget')[0]; // Перша col-budget - це статус
+    if (!statusCell) return;
+    
+    const statusBadge = statusCell.querySelector('.status-badge');
+    const isActive = statusBadge?.textContent.includes('Активний');
+    
+    // Оновлюємо статус (інвертуємо)
+    if (isActive) {
+        statusCell.innerHTML = `
+            <span class="status-badge" style="background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5;">
+                <i class="fas fa-times-circle"></i>
+                <span>Деактивований</span>
+            </span>
+        `;
+    } else {
+        statusCell.innerHTML = `
+            <span class="status-badge" style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;">
+                <i class="fas fa-check-circle"></i>
+                <span>Активний</span>
+            </span>
+        `;
+    }
+    
+    // Оновлюємо кнопку дії
+    const actionBtn = row.querySelector(`button[onclick*="toggleUserStatus(${userId})"]`);
+    if (actionBtn) {
+        if (isActive) {
+            // Став деактивованим - показуємо зелену кнопку активації
+            actionBtn.className = 'action-btn success';
+            actionBtn.title = 'Активувати';
+            actionBtn.innerHTML = '<i class="fas fa-check"></i>';
+        } else {
+            // Став активним - показуємо жовту кнопку деактивації
+            actionBtn.className = 'action-btn warning';
+            actionBtn.title = 'Деактивувати';
+            actionBtn.innerHTML = '<i class="fas fa-ban"></i>';
+        }
+    }
+    
+    // Оновлюємо статистику
+    updateUserStatCards();
 }
 
 function unlockUser(userId) {
@@ -334,9 +550,24 @@ function unlockUser(userId) {
     .then(data => {
         if (data.success) {
             showNotification(data.message, 'success');
-            setTimeout(() => {
-                location.reload();
-            }, 2000);
+            
+            // Видаляємо іконку замка і кнопку розблокування
+            const row = document.querySelector(`tr:has(button[onclick*="unlockUser(${userId})"])`);
+            if (row) {
+                // Видаляємо іконку замка біля імені
+                const lockIcon = row.querySelector('.fas.fa-lock');
+                if (lockIcon) {
+                    lockIcon.remove();
+                }
+                
+                // Видаляємо кнопку розблокування
+                const unlockBtn = row.querySelector(`button[onclick*="unlockUser(${userId})"]`);
+                if (unlockBtn) {
+                    unlockBtn.style.transition = 'opacity 0.3s ease';
+                    unlockBtn.style.opacity = '0';
+                    setTimeout(() => unlockBtn.remove(), 300);
+                }
+            }
         } else {
             showNotification(data.message, 'error');
         }
@@ -362,9 +593,19 @@ function deleteUser(userId, username) {
     .then(data => {
         if (data.success) {
             showNotification(data.message, 'success');
-            setTimeout(() => {
-                location.reload();
-            }, 2000);
+            
+            // Плавно видаляємо рядок з таблиці
+            const row = document.querySelector(`tr:has(button[onclick*="deleteUser(${userId},"])`);
+            if (row) {
+                row.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                row.style.opacity = '0';
+                row.style.transform = 'translateX(-20px)';
+                
+                setTimeout(() => {
+                    row.remove();
+                    updateUserStatCards();
+                }, 300);
+            }
         } else {
             showNotification(data.message, 'error');
         }
@@ -374,6 +615,436 @@ function deleteUser(userId, username) {
         showNotification('Помилка при видаленні користувача', 'error');
     });
 }
+
+function updateUserStatCards() {
+    // Перераховуємо статистику
+    const allRows = document.querySelectorAll('.leads-table tbody tr');
+    let totalUsers = allRows.length;
+    let activeUsers = 0;
+    let agents = 0;
+    let admins = 0;
+    
+    allRows.forEach(row => {
+        // Підраховуємо активних
+        const statusBadge = row.querySelectorAll('.col-budget')[0]?.querySelector('.status-badge');
+        if (statusBadge && statusBadge.textContent.includes('Активний')) {
+            activeUsers++;
+        }
+        
+        // Підраховуємо агентів і адмінів
+        const roleBadge = row.querySelector('.col-status .status-badge');
+        if (roleBadge) {
+            if (roleBadge.textContent.includes('Агент')) {
+                agents++;
+            } else if (roleBadge.textContent.includes('Адміністратор')) {
+                admins++;
+            }
+        }
+    });
+    
+    // Оновлюємо картки
+    const statsCards = document.querySelectorAll('.stats-card h4');
+    if (statsCards[0]) statsCards[0].textContent = totalUsers; // Всього
+    if (statsCards[1]) statsCards[1].textContent = activeUsers; // Активних
+    if (statsCards[2]) statsCards[2].textContent = agents; // Агентів
+    if (statsCards[3]) statsCards[3].textContent = admins; // Адмінів
+}
+
+function openCommissionModal(userId, username, currentCommission) {
+    currentUserId = userId;
+    document.getElementById('modalUsername').textContent = username;
+    document.getElementById('commissionInput').value = currentCommission;
+    document.getElementById('commissionModal').style.display = 'flex';
+    
+    // Фокус на input
+    setTimeout(() => {
+        document.getElementById('commissionInput').focus();
+        document.getElementById('commissionInput').select();
+    }, 100);
+}
+
+function closeCommissionModal() {
+    document.getElementById('commissionModal').style.display = 'none';
+    currentUserId = null;
+}
+
+function setCommissionValue(value) {
+    document.getElementById('commissionInput').value = value;
+}
+
+function saveCommission() {
+    const commission = document.getElementById('commissionInput').value;
+    
+    if (commission === '' || isNaN(commission)) {
+        showNotification('Будь ласка, введіть коректне значення комісії', 'error');
+        return;
+    }
+    
+    const commissionNum = parseFloat(commission);
+    if (commissionNum < 0 || commissionNum > 100) {
+        showNotification('Комісія має бути від 0% до 100%', 'error');
+        return;
+    }
+    
+    fetch(`/admin/users/${currentUserId}/commission`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ commission: commissionNum })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message, 'success');
+            
+            // Оновлюємо відображення комісії в таблиці
+            const commissionCell = document.getElementById(`commission-${currentUserId}`);
+            if (commissionCell) {
+                commissionCell.innerHTML = `<strong style="color: var(--sidebar-primary); font-size: 1rem;">${data.commission}%</strong>`;
+            }
+            
+            // Оновлюємо значення комісії в кнопці (для наступного відкриття модалки)
+            const buttons = document.querySelectorAll(`button[onclick*="openCommissionModal(${currentUserId}"]`);
+            buttons.forEach(button => {
+                const username = document.getElementById('modalUsername').textContent;
+                button.setAttribute('onclick', `openCommissionModal(${currentUserId}, '${username}', ${data.commission})`);
+            });
+            
+            // Оновлюємо значення в модалці для поточної сесії
+            document.getElementById('commissionInput').value = data.commission;
+            
+            closeCommissionModal();
+        } else {
+            showNotification(data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Помилка при оновленні комісії', 'error');
+    });
+}
+
+// ===== ФУНКЦІЇ ДЛЯ РОБОТИ З ДОКУМЕНТАМИ =====
+function openDocumentsModal(userId, username) {
+    currentDocumentsUserId = userId;
+    document.getElementById('documentsUsername').textContent = username;
+    document.getElementById('documentsModal').style.display = 'flex';
+    
+    // Очищаємо форму
+    clearSelectedFile();
+    
+    // Завантажуємо список документів
+    loadDocuments(userId);
+}
+
+function closeDocumentsModal() {
+    document.getElementById('documentsModal').style.display = 'none';
+    currentDocumentsUserId = null;
+    clearSelectedFile();
+}
+
+function updateFileName() {
+    const fileInput = document.getElementById('documentFile');
+    const fileNameSpan = document.getElementById('selectedFileName');
+    const clearBtn = document.getElementById('clearFileBtn');
+    
+    if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        const fileName = file.name;
+        const fileSize = (file.size / 1024 / 1024).toFixed(2); // MB
+        
+        fileNameSpan.innerHTML = `<strong style="color: var(--sidebar-text);">${fileName}</strong> <span style="color: var(--sidebar-text-muted);">(${fileSize} MB)</span>`;
+        fileNameSpan.style.fontStyle = 'normal';
+        clearBtn.style.display = 'inline-block';
+    } else {
+        clearSelectedFile();
+    }
+}
+
+function clearSelectedFile() {
+    const fileInput = document.getElementById('documentFile');
+    const fileNameSpan = document.getElementById('selectedFileName');
+    const clearBtn = document.getElementById('clearFileBtn');
+    
+    fileInput.value = '';
+    fileNameSpan.textContent = 'Файл не вибрано';
+    fileNameSpan.style.fontStyle = 'italic';
+    clearBtn.style.display = 'none';
+}
+
+function loadDocuments(userId) {
+    const contentDiv = document.getElementById('documentsListContent');
+    contentDiv.innerHTML = `
+        <div style="text-align: center; padding: 2rem; color: var(--sidebar-text-muted);">
+            <i class="fas fa-spinner fa-spin fa-2x"></i>
+            <p style="margin-top: 1rem;">Завантаження...</p>
+        </div>
+    `;
+    
+    fetch(`/admin/users/${userId}/documents`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (data.documents.length === 0) {
+                    contentDiv.innerHTML = `
+                        <div style="text-align: center; padding: 2rem; color: var(--sidebar-text-muted);">
+                            <i class="fas fa-folder-open fa-3x" style="opacity: 0.3;"></i>
+                            <p style="margin-top: 1rem;">Немає завантажених документів</p>
+                        </div>
+                    `;
+                } else {
+                    let html = '<div style="display: flex; flex-direction: column; gap: 0.75rem;">';
+                    data.documents.forEach(doc => {
+                        const fileIcon = getFileIcon(doc.file_type);
+                        const fileSize = formatFileSize(doc.file_size);
+                        
+                        html += `
+                            <div class="document-item" style="display: flex; align-items: center; gap: 1rem; padding: 0.75rem; background: white; border: 1px solid #e2e8f0; border-radius: 8px;">
+                                <div style="font-size: 1.5rem; color: var(--sidebar-primary); width: 2rem; text-align: center;">
+                                    <i class="fas fa-${fileIcon}"></i>
+                                </div>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-weight: 500; color: var(--sidebar-text); margin-bottom: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                        ${doc.filename}
+                                    </div>
+                                    <div style="font-size: 0.75rem; color: var(--sidebar-text-muted);">
+                                        ${fileSize} • ${doc.uploaded_at} • ${doc.uploader_name}
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <button class="action-btn success" onclick="downloadDocument(${doc.id})" title="Завантажити">
+                                        <i class="fas fa-download"></i>
+                                    </button>
+                                    <button class="action-btn danger" onclick="deleteDocument(${userId}, ${doc.id}, '${doc.filename}')" title="Видалити">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    contentDiv.innerHTML = html;
+                }
+            } else {
+                contentDiv.innerHTML = `
+                    <div style="text-align: center; padding: 2rem; color: #ef4444;">
+                        <i class="fas fa-exclamation-circle fa-2x"></i>
+                        <p style="margin-top: 1rem;">${data.message}</p>
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            contentDiv.innerHTML = `
+                <div style="text-align: center; padding: 2rem; color: #ef4444;">
+                    <i class="fas fa-exclamation-circle fa-2x"></i>
+                    <p style="margin-top: 1rem;">Помилка при завантаженні документів</p>
+                </div>
+            `;
+        });
+}
+
+function saveDocumentChanges() {
+    console.log('🚀 === FRONTEND: ПОЧАТОК ЗАВАНТАЖЕННЯ ===');
+    
+    const fileInput = document.getElementById('documentFile');
+    const file = fileInput.files[0];
+    
+    console.log('📋 Перевірка файлу:', {
+        fileSelected: !!file,
+        fileName: file ? file.name : 'немає',
+        fileSize: file ? file.size : 0,
+        fileType: file ? file.type : 'немає'
+    });
+    
+    // Якщо файл не вибрано - просто закриваємо модалку
+    if (!file) {
+        console.log('ℹ️ Файл не вибрано, закриваємо модалку');
+        closeDocumentsModal();
+        return;
+    }
+    
+    // Перевірка розміру файлу (макс 10MB)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+        console.error('❌ Файл занадто великий:', (file.size / 1024 / 1024).toFixed(2), 'MB');
+        showNotification('Файл занадто великий. Максимальний розмір: 10MB', 'error');
+        return;
+    }
+    
+    console.log('✅ Файл пройшов перевірку розміру');
+    
+    // Показуємо індикатор завантаження
+    const saveBtn = event.target;
+    const originalBtnText = saveBtn.innerHTML;
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Завантаження...';
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    console.log('📤 FormData створено, відправляємо запит...');
+    console.log('   URL:', `/admin/users/${currentDocumentsUserId}/documents`);
+    console.log('   User ID:', currentDocumentsUserId);
+    
+    fetch(`/admin/users/${currentDocumentsUserId}/documents`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        console.log('📥 Отримано відповідь від сервера:', {
+            status: response.status,
+            statusText: response.statusText,
+            ok: response.ok
+        });
+        return response.json();
+    })
+    .then(data => {
+        console.log('📊 Дані з відповіді:', data);
+        
+        if (data.success) {
+            console.log('✅ Успіх! Документ завантажено');
+            showNotification('✅ Документ успішно завантажено в S3!', 'success');
+            
+            // Очищаємо форму
+            clearSelectedFile();
+            
+            // Оновлюємо список документів
+            console.log('🔄 Оновлюємо список документів...');
+            loadDocuments(currentDocumentsUserId);
+            
+            // Оновлюємо іконку документів в таблиці
+            console.log('🔄 Оновлюємо іконку документів...');
+            updateDocumentButtonIcon(currentDocumentsUserId);
+        } else {
+            console.error('❌ Сервер повернув помилку:', data.message);
+            showNotification(data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('❌❌❌ ПОМИЛКА FETCH ❌❌❌');
+        console.error('   Тип помилки:', error.name);
+        console.error('   Повідомлення:', error.message);
+        console.error('   Stack:', error.stack);
+        showNotification('❌ Помилка при завантаженні документу', 'error');
+    })
+    .finally(() => {
+        console.log('🏁 Завершення операції');
+        // Відновлюємо кнопку
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = originalBtnText;
+    });
+}
+
+function deleteDocument(userId, docId, filename) {
+    if (!confirm(`Видалити документ "${filename}"?`)) {
+        return;
+    }
+    
+    fetch(`/admin/users/${userId}/documents/${docId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message, 'success');
+            loadDocuments(userId);
+            
+            // Оновлюємо іконку документів в таблиці
+            updateDocumentButtonIcon(userId);
+        } else {
+            showNotification(data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Помилка при видаленні документу', 'error');
+    });
+}
+
+function downloadDocument(docId) {
+    window.open(`/documents/${docId}/download`, '_blank');
+}
+
+function updateDocumentButtonIcon(userId) {
+    console.log('🔄 Оновлення іконки документів для userId:', userId);
+    
+    fetch(`/admin/users/${userId}/documents`)
+        .then(response => response.json())
+        .then(data => {
+            console.log('📊 Отримано дані документів:', data);
+            
+            if (data.success) {
+                const docCount = data.documents.length;
+                console.log('📁 Кількість документів:', docCount);
+                
+                // Знаходимо кнопку за data-атрибутом
+                const button = document.querySelector(`button[data-user-id="${userId}"][data-doc-button="true"]`);
+                console.log('🔘 Кнопка знайдена:', !!button);
+                
+                if (button) {
+                    console.log('   Класи кнопки ДО оновлення:', button.className);
+                    
+                    // Видаляємо старі класи
+                    button.classList.remove('success', 'danger');
+                    
+                    // Додаємо новий клас
+                    const newClass = docCount > 0 ? 'success' : 'danger';
+                    button.classList.add(newClass);
+                    button.title = `Документи (${docCount})`;
+                    
+                    console.log(`✅ Іконка оновлена: ${newClass} (${docCount} документів)`);
+                    console.log('   Класи кнопки ПІСЛЯ оновлення:', button.className);
+                } else {
+                    console.error('❌ Кнопка не знайдена для userId:', userId);
+                    console.error('   Перевіряю всі кнопки з data-doc-button:', document.querySelectorAll('[data-doc-button]').length);
+                }
+            } else {
+                console.error('❌ Помилка у відповіді:', data.message);
+            }
+        })
+        .catch(error => {
+            console.error('❌ Помилка fetch:', error);
+        });
+}
+
+function getFileIcon(fileType) {
+    if (!fileType) return 'file';
+    if (fileType.includes('pdf')) return 'file-pdf';
+    if (fileType.includes('word') || fileType.includes('document')) return 'file-word';
+    if (fileType.includes('image') || fileType.includes('jpeg') || fileType.includes('png')) return 'file-image';
+    if (fileType.includes('text')) return 'file-alt';
+    return 'file';
+}
+
+function formatFileSize(bytes) {
+    if (!bytes) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+}
+
+// Натискання Enter в input
+document.addEventListener('DOMContentLoaded', function() {
+    const commissionInput = document.getElementById('commissionInput');
+    if (commissionInput) {
+        commissionInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                saveCommission();
+            }
+        });
+    }
+    
+    // Закриття модалки по Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeCommissionModal();
+        }
+    });
+});
 
 function showNotification(message, type = 'info') {
     const notification = document.createElement('div');
