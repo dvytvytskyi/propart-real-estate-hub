@@ -118,7 +118,7 @@
                                 <td>
                                     <span class="table-date">
                                         {% if agent.verification_request_date %}
-                                            {{ agent.verification_request_date.strftime('%d %B %Y %H:%M') }}
+                                            {{ agent.verification_request_date | ukraine_time }}
                                         {% else %}
                                             Не вказано
                                         {% endif %}
@@ -474,11 +474,15 @@ function confirmVerification() {
         commission = commissionNum;
     }
     
+    // Отримуємо CSRF токен
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    
     // Відправляємо запит
     fetch('/admin/verify_agent', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
         },
         body: JSON.stringify({
             agent_id: currentVerificationAgentId,

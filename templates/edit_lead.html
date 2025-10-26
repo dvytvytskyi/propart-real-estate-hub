@@ -27,6 +27,7 @@
             </div>
             <div class="card-body">
                 <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                     <div class="row">
                         <!-- Основна інформація -->
                         <div class="col-md-6">
@@ -41,9 +42,9 @@
                             </div>
                             
                             <div class="mb-3">
-                                <label for="email" class="form-label">Email *</label>
+                                <label for="email" class="form-label">Email</label>
                                 <input type="email" class="form-control" id="email" name="email" 
-                                       value="{{ form.email.data or '' }}" required>
+                                       value="{{ form.email.data or '' }}">
                             </div>
                             
                             <div class="mb-3">

@@ -242,7 +242,7 @@
                                 </td>
                                 <td class="col-updated">
                                     {% if user.last_login %}
-                                        {{ user.last_login.strftime('%d %B %Y %H:%M') }}
+                                        {{ user.last_login | ukraine_time }}
                                     {% else %}
                                         <span style="color: var(--sidebar-text-muted);">Ніколи</span>
                                     {% endif %}
@@ -455,6 +455,11 @@
 let currentUserId = null;
 let currentDocumentsUserId = null;
 
+// Функція для отримання CSRF токена
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+}
+
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
     const mainContent = document.getElementById('mainContent');
@@ -467,6 +472,7 @@ function toggleUserStatus(userId) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
         }
     })
     .then(response => response.json())
@@ -544,6 +550,7 @@ function unlockUser(userId) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
         }
     })
     .then(response => response.json())
@@ -587,6 +594,7 @@ function deleteUser(userId, username) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
         }
     })
     .then(response => response.json())
@@ -690,6 +698,7 @@ function saveCommission() {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
         },
         body: JSON.stringify({ commission: commissionNum })
     })
@@ -891,6 +900,9 @@ function saveDocumentChanges() {
     
     fetch(`/admin/users/${currentDocumentsUserId}/documents`, {
         method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken()
+        },
         body: formData
     })
     .then(response => {
@@ -944,7 +956,10 @@ function deleteDocument(userId, docId, filename) {
     }
     
     fetch(`/admin/users/${userId}/documents/${docId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+            'X-CSRFToken': getCsrfToken()
+        }
     })
     .then(response => response.json())
     .then(data => {

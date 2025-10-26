@@ -6,11 +6,13 @@ from flask_bcrypt import Bcrypt
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
-from wtforms import Form, StringField, PasswordField, TextAreaField, SelectField, HiddenField, validators
+from wtforms import StringField, PasswordField, TextAreaField, SelectField, HiddenField, DecimalField, validators
+from flask_wtf import FlaskForm as Form
 from dotenv import load_dotenv
 import traceback
 import os
 import time
+import threading
 import requests
 import phonenumbers
 from phonenumbers import carrier, geocoder, timezone
@@ -20,11 +22,22 @@ import io
 from hubspot import HubSpot
 from logging_config import setup_logging
 from hubspot_rate_limiter import hubspot_rate_limiter
+from timezone_utils import get_ukraine_time, utc_to_ukraine, format_ukraine_time, parse_hubspot_timestamp
 
 # Завантажуємо змінні середовища
 load_dotenv()
 
 app = Flask(__name__)
+
+# ===== ЧАСОВИЙ ПОЯС =====
+# Налаштовуємо часовий пояс для України (UTC+3)
+import os
+os.environ['TZ'] = 'Europe/Kiev'
+import time
+time.tzset()
+
+# Додаємо конфігурацію часового поясу для Flask
+app.config['TIMEZONE'] = 'Europe/Kiev'
 
 # ===== БЕЗПЕКА =====
 # Перевіряємо наявність SECRET_KEY
@@ -37,9 +50,12 @@ app.config['SECRET_KEY'] = SECRET_KEY
 
 # ===== БАЗА ДАНИХ =====
 # Покращена конфігурація з connection pooling
+# За замовчуванням використовуємо SQLite, якщо DATABASE_URL не задано
+import pathlib
+basedir = pathlib.Path(__file__).parent.absolute()
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
     'DATABASE_URL',
-    'postgresql://localhost/real_estate_agents'
+    f'sqlite:///{basedir}/instance/propart.db'
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -49,16 +65,25 @@ app.config['AWS_SECRET_ACCESS_KEY'] = os.getenv('AWS_SECRET_ACCESS_KEY')
 app.config['AWS_S3_BUCKET'] = os.getenv('AWS_S3_BUCKET')
 app.config['AWS_REGION'] = os.getenv('AWS_REGION', 'eu-central-1')
 
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'pool_size': 10,
-    'pool_recycle': 3600,
-    'pool_pre_ping': True,
-    'max_overflow': 20,
-    'connect_args': {
-        'connect_timeout': 10,
-        'options': '-c statement_timeout=30000'
+# Налаштування engine options залежно від типу бази даних
+database_uri = app.config['SQLALCHEMY_DATABASE_URI']
+if database_uri.startswith('sqlite'):
+    # Для SQLite використовуємо базові налаштування
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,
     }
-}
+else:
+    # Для PostgreSQL використовуємо повні налаштування з connection pooling
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_size': 10,
+        'pool_recycle': 3600,
+        'pool_pre_ping': True,
+        'max_overflow': 20,
+        'connect_args': {
+            'connect_timeout': 10,
+            'options': '-c statement_timeout=30000'
+        }
+    }
 
 db = SQLAlchemy(app)
 
@@ -66,9 +91,8 @@ db = SQLAlchemy(app)
 setup_logging(app)
 
 # ===== БЕЗПЕКА: CSRF захист =====
-# Тимчасово вимкнуто для сумісності зі старими формами
-# csrf = CSRFProtect(app)
-# TODO: Додати CSRF токени у всі форми перед активацією
+csrf = CSRFProtect(app)
+app.logger.info("✅ CSRF захист активовано")
 
 # ===== БЕЗПЕКА: Rate Limiting =====
 limiter = Limiter(
@@ -86,74 +110,153 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
+# ===== JINJA2 ФІЛЬТРИ =====
+@app.template_filter('ukraine_time')
+def ukraine_time_filter(dt, format_str='%d %B %Y %H:%M'):
+    """Фільтр для форматування часу в українському часовому поясі"""
+    return format_ukraine_time(dt, format_str)
+
 # ===== AWS S3 CLIENT =====
 def get_s3_client():
     """Створює та повертає S3 клієнт"""
-    app.logger.info("🔍 Перевірка конфігурації S3...")
+    app.logger.info("🔍 === ПЕРЕВІРКА КОНФІГУРАЦІЇ S3 ===")
     
     access_key = app.config.get('AWS_ACCESS_KEY_ID')
     secret_key = app.config.get('AWS_SECRET_ACCESS_KEY')
     bucket = app.config.get('AWS_S3_BUCKET')
-    region = app.config.get('AWS_REGION')
+    region = app.config.get('AWS_REGION', 'eu-central-1')
     
     app.logger.info(f"   AWS_ACCESS_KEY_ID: {'✅ встановлено' if access_key else '❌ відсутнє'}")
     app.logger.info(f"   AWS_SECRET_ACCESS_KEY: {'✅ встановлено' if secret_key else '❌ відсутнє'}")
     app.logger.info(f"   AWS_S3_BUCKET: {bucket if bucket else '❌ відсутнє'}")
-    app.logger.info(f"   AWS_REGION: {region if region else 'за замовчуванням'}")
+    app.logger.info(f"   AWS_REGION: {region}")
     
     if not all([access_key, secret_key, bucket]):
-        app.logger.error("❌ S3 не налаштовано повністю!")
+        app.logger.warning("⚠️ S3 не налаштовано повністю - використовуємо локальне зберігання")
+        app.logger.info("   Для налаштування S3 додайте в .env файл:")
+        app.logger.info("   AWS_ACCESS_KEY_ID=your_access_key")
+        app.logger.info("   AWS_SECRET_ACCESS_KEY=your_secret_key")
+        app.logger.info("   AWS_S3_BUCKET=your_bucket_name")
+        app.logger.info("   AWS_REGION=eu-central-1")
         return None
     
-    app.logger.info("✅ S3 клієнт створено успішно")
-    return boto3.client(
-        's3',
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-        region_name=region
-    )
+    try:
+        app.logger.info("🚀 Створення S3 клієнта...")
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            region_name=region
+        )
+        
+        # Тестуємо підключення
+        app.logger.info("🧪 Тестування підключення до S3...")
+        s3_client.head_bucket(Bucket=bucket)
+        app.logger.info("✅ S3 клієнт створено та протестовано успішно")
+        return s3_client
+        
+    except Exception as e:
+        app.logger.error(f"❌ Помилка створення S3 клієнта: {type(e).__name__}: {str(e)}")
+        app.logger.warning("⚠️ Використовуємо локальне зберігання")
+        return None
 
 def upload_file_to_s3(file, filename):
-    """Завантажує файл в S3 bucket"""
-    app.logger.info(f"📤 Початок завантаження файлу в S3: {filename}")
+    """Завантажує файл в S3 bucket з fallback на локальне зберігання"""
+    app.logger.info(f"📤 === ПОЧАТОК ЗАВАНТАЖЕННЯ ФАЙЛУ ===")
+    app.logger.info(f"   Файл: {filename}")
+    app.logger.info(f"   Тип файлу: {getattr(file, 'content_type', 'unknown')}")
+    app.logger.info(f"   Розмір файлу: {getattr(file, 'content_length', 'unknown')} байт")
     
+    # Перевіряємо налаштування S3
     s3_client = get_s3_client()
     if not s3_client:
-        app.logger.error("❌ S3 клієнт не створено - перевірте змінні середовища")
-        raise Exception("S3 не налаштовано. Перевірте змінні середовища AWS.")
+        app.logger.warning("⚠️ S3 не налаштовано - використовуємо локальне зберігання")
+        return upload_file_locally(file, filename)
     
     try:
         bucket = app.config['AWS_S3_BUCKET']
         content_type = file.content_type if hasattr(file, 'content_type') else 'application/octet-stream'
         
-        app.logger.info(f"   Bucket: {bucket}")
-        app.logger.info(f"   Filename: {filename}")
+        app.logger.info(f"   S3 Bucket: {bucket}")
         app.logger.info(f"   Content-Type: {content_type}")
+        app.logger.info(f"   AWS Region: {app.config.get('AWS_REGION', 'eu-central-1')}")
         
         # Повертаємо на початок файлу перед завантаженням
         file.seek(0)
         
+        # Завантажуємо файл в S3
+        app.logger.info("🚀 Завантаження файлу в S3...")
         s3_client.upload_fileobj(
             file,
             bucket,
             filename,
             ExtraArgs={
-                'ContentType': content_type
+                'ContentType': content_type,
+                'ACL': 'public-read'  # Робимо файл публічним
             }
         )
         
+        # Формуємо URL файлу
         s3_url = f"https://{bucket}.s3.{app.config['AWS_REGION']}.amazonaws.com/{filename}"
         app.logger.info(f"✅ Файл успішно завантажено в S3: {s3_url}")
         return s3_url
         
     except ClientError as e:
-        app.logger.error(f"❌ AWS ClientError: {e}")
-        app.logger.error(f"   Error Code: {e.response.get('Error', {}).get('Code', 'Unknown')}")
-        app.logger.error(f"   Error Message: {e.response.get('Error', {}).get('Message', 'Unknown')}")
-        raise Exception(f"Не вдалося завантажити файл в S3: {str(e)}")
+        error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+        error_message = e.response.get('Error', {}).get('Message', 'Unknown')
+        app.logger.error(f"❌ AWS ClientError: {error_code} - {error_message}")
+        app.logger.error(f"   Повний response: {e.response}")
+        app.logger.warning("⚠️ Помилка S3 - використовуємо локальне зберігання")
+        return upload_file_locally(file, filename)
     except Exception as e:
-        app.logger.error(f"❌ Загальна помилка завантаження: {type(e).__name__}: {str(e)}")
-        raise Exception(f"Помилка: {str(e)}")
+        app.logger.error(f"❌ Загальна помилка завантаження в S3: {type(e).__name__}: {str(e)}")
+        app.logger.warning("⚠️ Помилка S3 - використовуємо локальне зберігання")
+        return upload_file_locally(file, filename)
+
+
+def upload_file_locally(file, filename):
+    """Завантажує файл локально як fallback"""
+    app.logger.info(f"💾 Завантаження файлу локально: {filename}")
+    
+    try:
+        # Створюємо папку якщо не існує
+        upload_dir = os.path.join(app.root_path, 'static', 'uploads')
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # Визначаємо підпапку за типом файлу
+        if 'properties' in filename:
+            subdir = 'properties'
+        elif 'units' in filename:
+            subdir = 'units'
+        elif 'documents' in filename:
+            subdir = 'documents'
+        else:
+            subdir = 'misc'
+        
+        full_dir = os.path.join(upload_dir, subdir)
+        os.makedirs(full_dir, exist_ok=True)
+        
+        # Зберігаємо файл
+        local_filename = os.path.basename(filename)  # Беремо тільки ім'я файлу
+        file_path = os.path.join(full_dir, local_filename)
+        
+        # Перевіряємо тип файлу
+        if hasattr(file, 'save'):
+            # Flask FileStorage
+            file.save(file_path)
+        else:
+            # BytesIO або інший тип
+            with open(file_path, 'wb') as f:
+                f.write(file.read())
+        
+        # Формуємо URL для локального файлу
+        local_url = f"/static/uploads/{subdir}/{local_filename}"
+        app.logger.info(f"✅ Файл збережено локально: {local_url}")
+        return local_url
+        
+    except Exception as e:
+        app.logger.error(f"❌ Помилка локального зберігання: {type(e).__name__}: {str(e)}")
+        raise Exception(f"Не вдалося зберегти файл: {str(e)}")
 
 def download_file_from_s3(filename):
     """Завантажує файл з S3 bucket"""
@@ -171,16 +274,46 @@ def download_file_from_s3(filename):
         raise Exception(f"Не вдалося завантажити файл з S3: {str(e)}")
 
 def delete_file_from_s3(filename):
-    """Видаляє файл з S3 bucket"""
+    """Видаляє файл з S3 bucket або локально"""
+    app.logger.info(f"🗑️ Видалення файлу: {filename}")
+    
+    # Перевіряємо, чи це локальний файл
+    if filename.startswith('/static/uploads/'):
+        return delete_file_locally(filename)
+    
+    # Спробуємо видалити з S3
     s3_client = get_s3_client()
     if not s3_client:
-        raise Exception("S3 не налаштовано")
+        app.logger.warning("⚠️ S3 не налаштовано - пропускаємо видалення з S3")
+        return True
     
     try:
         s3_client.delete_object(Bucket=app.config['AWS_S3_BUCKET'], Key=filename)
+        app.logger.info(f"✅ Файл видалено з S3: {filename}")
         return True
     except ClientError as e:
-        app.logger.error(f"Помилка видалення з S3: {e}")
+        app.logger.error(f"❌ Помилка видалення з S3: {e}")
+        return False
+
+
+def delete_file_locally(filename):
+    """Видаляє локальний файл"""
+    try:
+        # Видаляємо /static/ з початку шляху
+        if filename.startswith('/static/'):
+            filename = filename[8:]  # Видаляємо '/static/'
+        
+        file_path = os.path.join(app.root_path, 'static', filename)
+        
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            app.logger.info(f"✅ Локальний файл видалено: {file_path}")
+            return True
+        else:
+            app.logger.warning(f"⚠️ Локальний файл не знайдено: {file_path}")
+            return True  # Не вважаємо це помилкою
+    except Exception as e:
+        app.logger.error(f"❌ Помилка видалення локального файлу: {e}")
         return False
 
 # ===== HUBSPOT API =====
@@ -339,8 +472,10 @@ class Lead(db.Model):
     
     hubspot_contact_id = db.Column(db.String(50))
     hubspot_deal_id = db.Column(db.String(50))
+    hubspot_stage_label = db.Column(db.String(100))  # Оригінальна назва стадії з HubSpot
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
+    last_sync_at = db.Column(db.DateTime)  # Час останньої синхронізації з HubSpot
 
 
 # Форми
@@ -350,8 +485,13 @@ class LoginForm(Form):
 
 class LeadForm(Form):
     deal_name = StringField('Deal name', [validators.DataRequired(), validators.Length(min=2, max=100)])
-    email = StringField('Email', [validators.DataRequired(), validators.Email()])
+    email = StringField('Email', [validators.Optional(), validators.Email()])
     phone = StringField('Phone number', [validators.DataRequired(), validators.Length(max=20)])
+    second_phone = StringField('Другий номер телефону', [validators.Length(max=20)])
+    company = StringField('Компанія', [validators.Length(max=100)])
+    telegram_nickname = StringField('Telegram', [validators.Length(max=50)])
+    messenger = StringField('Месенджер', [validators.Length(max=20)])
+    birth_date = StringField('Дата народження')
     budget = SelectField('Budget', choices=[
         ('до 200к', 'до 200к'),
         ('200к–500к', '200к–500к'),
@@ -403,14 +543,6 @@ class UserEditForm(Form):
         (False, 'Деактивований')
     ], coerce=bool)
 
-class NoteStatus(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    lead_id = db.Column(db.Integer, db.ForeignKey('lead.id'), nullable=False)
-    note_text = db.Column(db.Text, nullable=False)
-    status = db.Column(db.String(20), default='sent')  # sent, read, replied
-    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
-    updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
-
 class Activity(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     lead_id = db.Column(db.Integer, db.ForeignKey('lead.id'), nullable=False)
@@ -443,10 +575,122 @@ class UserDocument(db.Model):
     user = db.relationship('User', foreign_keys=[user_id], backref='documents')
     uploader = db.relationship('User', foreign_keys=[uploaded_by])
 
+
+class Property(db.Model):
+    """Модель нерухомості"""
+    __tablename__ = 'property'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)  # Назва проекту
+    location_country = db.Column(db.String(100), nullable=False)  # Країна
+    location_city = db.Column(db.String(100), nullable=False)  # Місто
+    location_district = db.Column(db.String(100))  # Район (опціонально)
+    price_from = db.Column(db.Numeric(15, 2), nullable=False)  # Ціна від
+    price_to = db.Column(db.Numeric(15, 2))  # Ціна до (опціонально)
+    payment_type = db.Column(db.Text)  # Тип платежу (розтермінування)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # Хто створив
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
+    
+    # Зв'язки
+    creator = db.relationship('User', backref='created_properties')
+    photos = db.relationship('PropertyPhoto', backref='property', cascade='all, delete-orphan')
+    units = db.relationship('PropertyUnit', backref='property', cascade='all, delete-orphan')
+    documents = db.relationship('PropertyDocument', backref='property', cascade='all, delete-orphan')
+
+
+class PropertyPhoto(db.Model):
+    """Фото нерухомості"""
+    __tablename__ = 'property_photo'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    property_id = db.Column(db.Integer, db.ForeignKey('property.id'), nullable=False)
+    filename = db.Column(db.String(255), nullable=False)
+    file_path = db.Column(db.String(500), nullable=False)
+    file_size = db.Column(db.Integer)
+    file_type = db.Column(db.String(100))
+    uploaded_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    is_main = db.Column(db.Boolean, default=False)  # Головне фото
+
+
+class PropertyUnit(db.Model):
+    """Планування квартир/юнітів"""
+    __tablename__ = 'property_unit'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    property_id = db.Column(db.Integer, db.ForeignKey('property.id'), nullable=False)
+    unit_type = db.Column(db.String(50), nullable=False)  # studio, 1, 2, 3, 4, 5, 6
+    size_from = db.Column(db.Numeric(8, 2), nullable=False)  # Розмір від
+    size_to = db.Column(db.Numeric(8, 2))  # Розмір до (опціонально)
+    price_per_unit = db.Column(db.Numeric(15, 2), nullable=False)  # Ціна за юніт
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    
+    # Зв'язки
+    photos = db.relationship('UnitPhoto', backref='unit', cascade='all, delete-orphan')
+
+
+class UnitPhoto(db.Model):
+    """Фото планування"""
+    __tablename__ = 'unit_photo'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    unit_id = db.Column(db.Integer, db.ForeignKey('property_unit.id'), nullable=False)
+    filename = db.Column(db.String(255), nullable=False)
+    file_path = db.Column(db.String(500), nullable=False)
+    file_size = db.Column(db.Integer)
+    file_type = db.Column(db.String(100))
+    uploaded_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+
+class PropertyDocument(db.Model):
+    """Документи проекту (максимум 5)"""
+    __tablename__ = 'property_document'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    property_id = db.Column(db.Integer, db.ForeignKey('property.id'), nullable=False)
+    filename = db.Column(db.String(255), nullable=False)
+    file_path = db.Column(db.String(500), nullable=False)
+    file_size = db.Column(db.Integer)
+    file_type = db.Column(db.String(100))
+    uploaded_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    description = db.Column(db.String(500))  # Опис документу
+
 class LeadEditForm(Form):
     deal_name = StringField('Deal name', [validators.DataRequired(), validators.Length(min=2, max=100)])
-    email = StringField('Email', [validators.DataRequired(), validators.Email()])
+    email = StringField('Email', [validators.Optional(), validators.Email()])
     phone = StringField('Phone number', [validators.DataRequired(), validators.Length(max=20)])
+
+
+class PropertyForm(Form):
+    name = StringField('Назва проекту', [validators.DataRequired(), validators.Length(min=2, max=200)])
+    location_country = SelectField('Країна', [validators.DataRequired()], choices=[
+        ('Україна', 'Україна'),
+        ('Польща', 'Польща'),
+        ('Німеччина', 'Німеччина'),
+        ('Чехія', 'Чехія'),
+        ('Словаччина', 'Словаччина'),
+        ('Інша', 'Інша')
+    ])
+    location_city = StringField('Місто', [validators.DataRequired(), validators.Length(min=2, max=100)])
+    location_district = StringField('Район (опціонально)', [validators.Length(max=100)])
+    price_from = DecimalField('Ціна від', [validators.DataRequired(), validators.NumberRange(min=0)])
+    price_to = DecimalField('Ціна до (опціонально)', [validators.NumberRange(min=0)])
+    payment_type = TextAreaField('Тип платежу (розтермінування)', [validators.Length(max=1000)])
+
+
+class UnitForm(Form):
+    unit_type = SelectField('Тип планування', [validators.DataRequired()], choices=[
+        ('studio', 'Studio'),
+        ('1', '1 кімната'),
+        ('2', '2 кімнати'),
+        ('3', '3 кімнати'),
+        ('4', '4 кімнати'),
+        ('5', '5 кімнат'),
+        ('6', '6 кімнат')
+    ])
+    size_from = DecimalField('Розмір від (м²)', [validators.DataRequired(), validators.NumberRange(min=0)])
+    size_to = DecimalField('Розмір до (м²) (опціонально)', [validators.NumberRange(min=0)])
+    price_per_unit = DecimalField('Ціна за юніт', [validators.DataRequired(), validators.NumberRange(min=0)])
     budget = SelectField('Budget', choices=[
         ('', 'Оберіть бюджет'),
         ('до 200к', 'до 200к'),
@@ -564,58 +808,6 @@ def get_budget_value(budget_str):
         return 1500000  # Приблизне значення
     else:
         return 0
-
-def fetch_notes_from_hubspot(lead):
-    """Отримує нотатки з HubSpot для контакту та угоди"""
-    if not hubspot_client or not lead.hubspot_contact_id:
-        print(f"Немає HubSpot клієнта або ID контакту для ліда {lead.id}")
-        return []
-    
-    notes = []
-    
-    try:
-        # Використовуємо search API для пошуку нотаток
-        from hubspot.crm.objects.notes import PublicObjectSearchRequest
-        from hubspot.crm.objects.notes import Filter, FilterGroup
-        
-        # Створюємо запит для пошуку нотаток
-        search_request = PublicObjectSearchRequest(
-            filter_groups=[
-                FilterGroup(
-                    filters=[
-                        Filter(
-                            property_name="hs_note_body",
-                            operator="HAS_PROPERTY"
-                        )
-                    ]
-                )
-            ],
-            properties=["hs_note_body", "hs_timestamp", "hs_createdate"],
-            limit=100
-        )
-        
-        # Виконуємо пошук нотаток
-        search_results = hubspot_client.crm.objects.notes.search_api.do_search(
-            public_object_search_request=search_request
-        )
-        
-        if search_results.results:
-            for note in search_results.results:
-                if note.properties and note.properties.get('hs_note_body'):
-                    notes.append({
-                        'id': str(note.id),
-                        'body': note.properties.get('hs_note_body', ''),
-                        'timestamp': note.properties.get('hs_timestamp'),
-                        'createdate': note.properties.get('hs_createdate'),
-                        'source': 'search'
-                    })
-        
-        print(f"Отримано {len(notes)} нотаток з HubSpot для ліда {lead.id}")
-        return notes
-        
-    except Exception as e:
-        print(f"Помилка отримання нотаток з HubSpot для ліда {lead.id}: {e}")
-        return []
 
 def fetch_activities_from_hubspot(lead):
     """Отримує активності з HubSpot для контакту та угоди"""
@@ -793,52 +985,6 @@ def fetch_activities_from_hubspot(lead):
         print(f"Помилка отримання активностей з HubSpot для ліда {lead.id}: {e}")
         return []
 
-def sync_notes_from_hubspot(lead):
-    """Синхронізує нотатки з HubSpot в локальну БД"""
-    if not hubspot_client or not lead.hubspot_contact_id:
-        return False
-    
-    try:
-        # Отримуємо нотатки з HubSpot
-        hubspot_notes = fetch_notes_from_hubspot(lead)
-        
-        for note_data in hubspot_notes:
-            # Перевіряємо, чи існує вже така нотатка в локальній БД
-            existing_note = NoteStatus.query.filter_by(
-                lead_id=lead.id,
-                note_text=note_data['body']
-            ).first()
-            
-            if not existing_note and note_data['body'].strip():
-                # Створюємо нову нотатку в локальній БД
-                new_note = NoteStatus(
-                    lead_id=lead.id,
-                    note_text=note_data['body'],
-                    status='read'  # Нотатки з HubSpot вважаємо прочитаними
-                )
-                
-                # Встановлюємо дату створення з HubSpot, якщо є
-                if note_data.get('createdate'):
-                    try:
-                        from datetime import datetime
-                        # HubSpot дата в форматі timestamp (мілісекунди)
-                        timestamp = int(note_data['createdate']) / 1000
-                        new_note.created_at = datetime.fromtimestamp(timestamp)
-                    except (ValueError, TypeError):
-                        pass  # Використовуємо поточну дату
-                
-                db.session.add(new_note)
-                print(f"Додано нотатку з HubSpot для ліда {lead.id}: {note_data['body'][:50]}...")
-        
-        db.session.commit()
-        print(f"Синхронізовано {len(hubspot_notes)} нотаток з HubSpot для ліда {lead.id}")
-        return True
-        
-    except Exception as e:
-        print(f"Помилка синхронізації нотаток для ліда {lead.id}: {e}")
-        db.session.rollback()
-        return False
-
 def sync_activities_from_hubspot(lead):
     """Синхронізує активності з HubSpot в локальну БД"""
     if not hubspot_client or not lead.hubspot_contact_id:
@@ -870,10 +1016,9 @@ def sync_activities_from_hubspot(lead):
                 # Встановлюємо дату створення з HubSpot, якщо є
                 if activity_data.get('createdate'):
                     try:
-                        from datetime import datetime
                         # HubSpot дата в форматі timestamp (мілісекунди)
-                        timestamp = int(activity_data['createdate']) / 1000
-                        new_activity.created_at = datetime.fromtimestamp(timestamp)
+                        timestamp_ms = int(activity_data['createdate'])
+                        new_activity.created_at = parse_hubspot_timestamp(timestamp_ms)
                     except (ValueError, TypeError):
                         pass  # Використовуємо поточну дату
                 
@@ -889,79 +1034,43 @@ def sync_activities_from_hubspot(lead):
         db.session.rollback()
         return False
 
-def create_note_in_hubspot(lead, note_text, note_type="note"):
-    """Створює нотатку в HubSpot для контакту або угоди"""
-    if not hubspot_client or not lead.hubspot_contact_id:
-        print(f"Немає HubSpot клієнта або ID контакту для ліда {lead.id}")
+def update_hubspot_dealstage(lead, new_status):
+    """Оновлює dealstage в HubSpot при зміні локального статусу"""
+    if not hubspot_client or not lead.hubspot_deal_id:
         return False
     
     try:
-        # Створюємо нотатку в HubSpot
-        note_properties = {
-            "hs_note_body": note_text,
-            "hs_timestamp": int(time.time() * 1000)  # timestamp в мілісекундах
+        # Зворотній маппінг: локальний статус → HubSpot dealstage ID
+        reverse_stage_mapping = {
+            'new': '3206423796',        # Новая заявка
+            'contacted': '3204738257',  # Звонок успешный
+            'qualified': '3204738259',  # Отправлены варианты
+            'closed': '3204738267'      # Сделка закрыта
         }
         
-        from hubspot.crm.objects.notes import SimplePublicObjectInput as NoteInput
-        note_input = NoteInput(properties=note_properties)
+        if new_status not in reverse_stage_mapping:
+            print(f"⚠️ Немає маппінгу для статусу '{new_status}', dealstage не оновлено")
+            return False
         
-        # Створюємо нотатку
-        hubspot_note = hubspot_client.crm.objects.notes.basic_api.create(note_input)
-        hubspot_note_id = str(hubspot_note.id)
-        print(f"Створено нотатку в HubSpot: {hubspot_note_id}")
+        hubspot_dealstage = reverse_stage_mapping[new_status]
         
-        # Прив'язуємо нотатку до контакту
-        try:
-            from hubspot.crm.associations import BatchInputPublicAssociation
-            from hubspot.crm.associations import PublicAssociation
-            
-            # Створюємо асоціацію з контактом
-            association = PublicAssociation(
-                _from=hubspot_note_id,
-                to=lead.hubspot_contact_id,
-                type="note_to_contact"
-            )
-            
-            batch_input = BatchInputPublicAssociation(inputs=[association])
-            
-            hubspot_client.crm.associations.batch_api.create(
-                "notes",
-                "contacts",
-                batch_input_public_association=batch_input
-            )
-            print(f"Нотатку {hubspot_note_id} прив'язано до контакту {lead.hubspot_contact_id}")
-        except Exception as assoc_error:
-            print(f"Помилка прив'язки нотатки до контакту: {assoc_error}")
+        # Оновлюємо dealstage в HubSpot
+        hubspot_client.crm.deals.basic_api.update(
+            deal_id=lead.hubspot_deal_id,
+            simple_public_object_input={
+                "properties": {
+                    "dealstage": hubspot_dealstage
+                }
+            }
+        )
         
-        # Якщо є угода, прив'язуємо нотатку і до неї
-        if lead.hubspot_deal_id:
-            try:
-                from hubspot.crm.associations import BatchInputPublicAssociation
-                from hubspot.crm.associations import PublicAssociation
-                
-                # Створюємо асоціацію з угодою
-                association = PublicAssociation(
-                    _from=hubspot_note_id,
-                    to=lead.hubspot_deal_id,
-                    type="note_to_deal"
-                )
-                
-                batch_input = BatchInputPublicAssociation(inputs=[association])
-                
-                hubspot_client.crm.associations.batch_api.create(
-                    "notes",
-                    "deals",
-                    batch_input_public_association=batch_input
-                )
-                print(f"Нотатку {hubspot_note_id} прив'язано до угоди {lead.hubspot_deal_id}")
-            except Exception as assoc_error:
-                print(f"Помилка прив'язки нотатки до угоди: {assoc_error}")
-        
+        print(f"✅ Оновлено HubSpot dealstage для ліда {lead.id}: {new_status} → {hubspot_dealstage}")
+        app.logger.info(f"✅ Оновлено HubSpot dealstage для ліда {lead.id}: {new_status} → {hubspot_dealstage}")
         return True
         
     except Exception as e:
-        print(f"Помилка створення нотатки в HubSpot: {e}")
-        traceback.print_exc()
+        print(f"❌ Помилка оновлення HubSpot dealstage для ліда {lead.id}: {e}")
+        app.logger.error(f"Помилка оновлення HubSpot dealstage: {e}")
         return False
 
 def sync_lead_from_hubspot(lead):
@@ -1022,61 +1131,63 @@ def sync_lead_from_hubspot(lead):
             else:
                 print(f"⚠️ Жодне phone поле не знайдено в HubSpot!")
             
-            # Оновлюємо додаткові контактні дані
+            # Оновлюємо додаткові контактні дані (другий номер телефону)
+            print(f"📞 Перевірка другого номеру телефону:")
+            print(f"   phone_number_1: {contact.properties.get('phone_number_1')}")
             if contact.properties.get('phone_number_1'):
                 lead.second_phone = contact.properties['phone_number_1']
+                print(f"✅ Оновлено другий телефон (phone_number_1): {lead.second_phone}")
+            else:
+                print(f"⚠️ Другий номер телефону (phone_number_1) не знайдено в HubSpot")
             
-            # Мапимо telegram (спочатку з __cloned_, потім без)
-            if contact.properties.get('telegram__cloned_'):
-                lead.telegram_nickname = contact.properties['telegram__cloned_']
-                print(f"Оновлено telegram з контакту (__cloned_): {contact.properties['telegram__cloned_']}")
-            elif contact.properties.get('telegram'):
+            # Мапимо telegram (спочатку без __cloned_, потім з)
+            if contact.properties.get('telegram'):
                 lead.telegram_nickname = contact.properties['telegram']
                 print(f"Оновлено telegram з контакту: {contact.properties['telegram']}")
+            elif contact.properties.get('telegram__cloned_'):
+                lead.telegram_nickname = contact.properties['telegram__cloned_']
+                print(f"Оновлено telegram з контакту (__cloned_): {contact.properties['telegram__cloned_']}")
             
-            # Мапимо messenger (спочатку з __cloned_, потім без)
-            if contact.properties.get('messenger__cloned_'):
-                lead.messenger = contact.properties['messenger__cloned_']
-                print(f"Оновлено messenger з контакту (__cloned_): {contact.properties['messenger__cloned_']}")
-            elif contact.properties.get('messenger'):
+            # Мапимо messenger (спочатку без __cloned_, потім з)
+            if contact.properties.get('messenger'):
                 lead.messenger = contact.properties['messenger']
                 print(f"Оновлено messenger з контакту: {contact.properties['messenger']}")
+            elif contact.properties.get('messenger__cloned_'):
+                lead.messenger = contact.properties['messenger__cloned_']
+                print(f"Оновлено messenger з контакту (__cloned_): {contact.properties['messenger__cloned_']}")
             
-            # Мапимо birthdate (спочатку з __cloned_, потім без)
+            # Мапимо birthdate (спочатку без __cloned_, потім з)
+            print(f"🎂 Перевірка дати народження:")
+            print(f"   birthdate: {contact.properties.get('birthdate')}")
+            print(f"   birthdate__cloned_: {contact.properties.get('birthdate__cloned_')}")
+            
             birth_date_value = None
-            if contact.properties.get('birthdate__cloned_'):
-                birth_date_value = contact.properties['birthdate__cloned_']
-            elif contact.properties.get('birthdate'):
+            birth_date_source = None
+            if contact.properties.get('birthdate'):
                 birth_date_value = contact.properties['birthdate']
+                birth_date_source = "birthdate"
+            elif contact.properties.get('birthdate__cloned_'):
+                birth_date_value = contact.properties['birthdate__cloned_']
+                birth_date_source = "birthdate__cloned_"
             
             if birth_date_value:
                 try:
                     from datetime import datetime
                     birth_date = datetime.strptime(birth_date_value, '%Y-%m-%d').date()
                     lead.birth_date = birth_date
-                    print(f"Оновлено birthdate з контакту: {birth_date_value}")
-                except (ValueError, TypeError):
-                    print(f"Не вдалося перетворити дату народження з контакту: {birth_date_value}")
+                    print(f"✅ Оновлено дату народження з {birth_date_source}: {birth_date_value} → {birth_date}")
+                except (ValueError, TypeError) as e:
+                    print(f"❌ Не вдалося перетворити дату народження з контакту: {birth_date_value} (помилка: {e})")
+            else:
+                print(f"⚠️ Дата народження не знайдена в HubSpot")
             
             if contact.properties.get('company'):
                 lead.company = contact.properties['company']
             
-            # Оновлюємо нотатки
+            # Оновлюємо нотатки в полі lead.notes (старий спосіб)
             if contact.properties.get('notes_last_contacted'):
-                # Перевіряємо, чи є вже така нотатка
-                existing_note = NoteStatus.query.filter_by(
-                    lead_id=lead.id,
-                    note_text=contact.properties['notes_last_contacted']
-                ).first()
-                
-                if not existing_note:
-                    # Додаємо нову нотатку
-                    new_note = NoteStatus(
-                        lead_id=lead.id,
-                        note_text=contact.properties['notes_last_contacted'],
-                        status='read'  # Нотатка з HubSpot вважається прочитаною
-                    )
-                    db.session.add(new_note)
+                if not lead.notes or contact.properties['notes_last_contacted'] not in lead.notes:
+                    lead.notes = (lead.notes or '') + '\n' + contact.properties['notes_last_contacted']
         
         # Отримуємо угоду з HubSpot
         if lead.hubspot_deal_id:
@@ -1088,24 +1199,75 @@ def sync_lead_from_hubspot(lead):
                     "source_channel", "deal_closed", "decline_reason", "purchase_reason__cloned_",
                     "property_type__cloned_", "property_status__cloned_", "purchase_reason",
                     "hubspot_owner_id", "purchase_country", "telegram", "messenger", "birthdate",
-                    "responisble_agent"
+                    "responisble_agent", "from_agent_portal__name_"
                 ]
             )
             print(f"Отримано угоду з HubSpot: {deal.properties}")
             
             if deal.properties:
-                # Оновлюємо статус угоди
+                # Оновлюємо статус угоди з HubSpot dealstage
                 if deal.properties.get('dealstage'):
-                    # Мапимо статуси HubSpot на наші статуси
+                    # Мапимо всі стадії HubSpot (dealstage ID) на наші статуси
                     stage_mapping = {
-                        '3206423796': 'new',  # Новая заявка
-                        '3204738255': 'contacted',  # Вовремя не обработан
-                        '3204738256': 'qualified',  # Звонок успешный
-                        '3204738257': 'closed'  # Закрыт
+                        # Нові заявки та необроблені
+                        '3206423796': 'new',        # Новая заявка
+                        '3204738255': 'new',        # Вовремя не обработан
+                        
+                        # Контакт встановлено
+                        '3204738256': 'contacted',  # Недозвон
+                        '3204738257': 'contacted',  # Звонок успешный
+                        '3204738258': 'contacted',  # Запрос получен
+                        
+                        # Кваліфіковані ліди (варіанти, зустрічі, тури, переговори)
+                        '3204738259': 'qualified',  # Отправлены варианты
+                        '3204738260': 'qualified',  # Передан на партнеров
+                        '3204738261': 'qualified',  # Назначена встреча
+                        '3204738262': 'qualified',  # Встреча проведена
+                        '3204738263': 'qualified',  # Тур назначен
+                        '3204738264': 'qualified',  # Тур проведен
+                        '3204738265': 'qualified',  # Переговоры
+                        '3204738266': 'qualified',  # Задаток
+                        
+                        # Закриті угоди (успішно або невдало)
+                        '3204738267': 'closed',     # Сделка закрыта
+                        '3204738268': 'closed'      # Мусор
                     }
+                    
+                    # Маппінг ID стадій на їх назви
+                    stage_labels = {
+                        '3206423796': 'Новая заявка',
+                        '3204738255': 'Вовремя не обработан',
+                        '3204738256': 'Недозвон',
+                        '3204738257': 'Звонок успешный',
+                        '3204738258': 'Запрос получен',
+                        '3204738259': 'Отправлены варианты',
+                        '3204738260': 'Передан на партнеров',
+                        '3204738261': 'Назначена встреча',
+                        '3204738262': 'Встреча проведена',
+                        '3204738263': 'Тур назначен',
+                        '3204738264': 'Тур проведен',
+                        '3204738265': 'Переговоры',
+                        '3204738266': 'Задаток',
+                        '3204738267': 'Сделка закрыта',
+                        '3204738268': 'Мусор'
+                    }
+                    
                     hubspot_stage = deal.properties['dealstage']
+                    print(f"🔄 HubSpot dealstage: {hubspot_stage}")
+                    
+                    # Зберігаємо оригінальну назву стадії з HubSpot
+                    if hubspot_stage in stage_labels:
+                        lead.hubspot_stage_label = stage_labels[hubspot_stage]
+                        print(f"   Стадія HubSpot: {lead.hubspot_stage_label}")
+                    
                     if hubspot_stage in stage_mapping:
+                        old_status = lead.status
                         lead.status = stage_mapping[hubspot_stage]
+                        print(f"   Оновлено статус: {old_status} → {lead.status}")
+                    else:
+                        print(f"⚠️ Невідомий dealstage ID: {hubspot_stage}, статус не оновлено")
+                        # Логуємо невідомий dealstage для подальшого додавання в маппінг
+                        app.logger.warning(f"Невідомий HubSpot dealstage: {hubspot_stage} для ліда {lead.id}")
                 
                 # Оновлюємо суму
                 if deal.properties.get('amount'):
@@ -1187,6 +1349,10 @@ def sync_lead_from_hubspot(lead):
                         lead.notes = f"HubSpot Responsible Agent: {deal.properties['responisble_agent']}"
                     print(f"HubSpot відповідальний агент: {deal.properties['responisble_agent']}")
                 
+                # Виводимо інформацію про агента з порталу
+                if deal.properties.get('from_agent_portal__name_'):
+                    print(f"👤 Агент з порталу: {deal.properties['from_agent_portal__name_']}")
+                
                 # Оновлюємо deal owner (власника угоди) - зберігаємо в окремому полі
                 if deal.properties.get('hubspot_owner_id'):
                     try:
@@ -1215,11 +1381,11 @@ def sync_lead_from_hubspot(lead):
                     except Exception as e:
                         print(f"Помилка отримання власника угоди: {e}")
         
-        # Синхронізуємо нотатки з HubSpot
-        sync_notes_from_hubspot(lead)
-        
         # Синхронізуємо активності з HubSpot
         sync_activities_from_hubspot(lead)
+        
+        # Оновлюємо час останньої синхронізації
+        lead.last_sync_at = get_ukraine_time()
         
         db.session.commit()
         print(f"Лід {lead.id} синхронізовано з HubSpot")
@@ -1243,6 +1409,31 @@ def sync_all_leads_from_hubspot():
     
     print(f"Синхронізовано {synced_count} з {len(leads)} лідів")
     return synced_count > 0
+
+def background_sync_task():
+    """Фонова задача для автоматичної синхронізації лідів кожні 60 секунд"""
+    print("🔄 Запущено фонову синхронізацію (кожні 60 секунд)")
+    
+    while True:
+        try:
+            time.sleep(60)  # Чекаємо 60 секунд
+            
+            with app.app_context():
+                if hubspot_client:
+                    print("⏰ Початок автоматичної синхронізації...")
+                    sync_all_leads_from_hubspot()
+                    print("✅ Автоматична синхронізація завершена")
+                else:
+                    print("⚠️ HubSpot API не налаштований, синхронізація пропущена")
+        except Exception as e:
+            print(f"❌ Помилка в фоновій синхронізації: {e}")
+            traceback.print_exc()
+
+def start_background_sync():
+    """Запускає фонову синхронізацію в окремому потоці"""
+    sync_thread = threading.Thread(target=background_sync_task, daemon=True)
+    sync_thread.start()
+    print("✅ Фонова синхронізація запущена")
 
 # Маршрути
 @app.route('/')
@@ -1279,8 +1470,7 @@ def login():
                 # Перевіряємо пароль
                 if user.check_password(password):
                     # Успішний вхід
-                    from datetime import datetime
-                    user.last_login = datetime.now()
+                    user.last_login = get_ukraine_time()
                     user.reset_login_attempts()
                     db.session.commit()
                     login_user(user)
@@ -1508,9 +1698,8 @@ def request_verification():
         return jsonify({'success': False, 'message': 'Ви вже подавали запит на верифікацію'})
     
     try:
-        from datetime import datetime
         current_user.verification_requested = True
-        current_user.verification_request_date = datetime.now()
+        current_user.verification_request_date = get_ukraine_time()
         db.session.commit()
         
         return jsonify({'success': True, 'message': 'Запит на верифікацію подано успішно'})
@@ -1531,7 +1720,7 @@ def close_deal(lead_id):
     try:
         # Оновлюємо статус ліда
         lead.status = 'closed'
-        lead.notes = (lead.notes or '') + f'\n[Угода закрита {datetime.now().strftime("%d.%m.%Y %H:%M")}]'
+        lead.notes = (lead.notes or '') + f'\n[Угода закрита {get_ukraine_time().strftime("%d.%m.%Y %H:%M")}]'
         
         # Нараховуємо поінти за закриття угоди
         agent = User.query.get(lead.agent_id)
@@ -1564,7 +1753,6 @@ def delete_lead(lead_id):
     
     try:
         # Видаляємо пов'язані записи
-        NoteStatus.query.filter_by(lead_id=lead_id).delete()
         Activity.query.filter_by(lead_id=lead_id).delete()
         
         # Видаляємо лід
@@ -1836,21 +2024,66 @@ def add_lead():
         # Для адміна можна вибрати агента, але за замовчуванням - поточний користувач
         form.agent_id.data = current_user.id
     
+    # === ДЕТАЛЬНЕ ЛОГУВАННЯ ДЛЯ ДІАГНОСТИКИ ===
+    app.logger.info("=" * 80)
+    app.logger.info(f"🔍 ADD_LEAD: Запит методом {request.method}")
+    app.logger.info(f"👤 Користувач: {current_user.username} (ID: {current_user.id}, role: {current_user.role})")
+    
+    if request.method == 'POST':
+        app.logger.info(f"📝 Отримані дані форми:")
+        for key, value in request.form.items():
+            # Не логуємо чутливі дані повністю
+            if key in ['email', 'phone']:
+                app.logger.info(f"   {key}: {value[:3]}...{value[-3:] if len(value) > 6 else ''}")
+            else:
+                app.logger.info(f"   {key}: {value}")
+        
+        # Перевіряємо валідацію форми
+        is_valid = form.validate()
+        app.logger.info(f"✅ Валідація форми: {'ПРОЙДЕНО' if is_valid else 'ПРОВАЛЕНО'}")
+        
+        if not is_valid:
+            app.logger.error(f"❌ Помилки валідації форми:")
+            for field, errors in form.errors.items():
+                for error in errors:
+                    app.logger.error(f"   {field}: {error}")
+                    # Показуємо помилки користувачу
+                    flash(f'Помилка поля {field}: {error}', 'error')
+    
     if request.method == 'POST' and form.validate():
+        app.logger.info("✅ Форма валідна, починаємо обробку...")
         try:
             # Валідація та форматування телефону
             phone_number = form.phone.data
+            app.logger.info(f"📞 Валідація номера телефону: {phone_number[:5]}...")
             try:
                 parsed_number = phonenumbers.parse(phone_number, None)
                 if not phonenumbers.is_valid_number(parsed_number):
-                    return redirect(url_for('add_lead', flash='Невірний формат номера телефону', type='error'))
+                    app.logger.error(f"❌ Невірний формат номера телефону: {phone_number}")
+                    flash('Невірний формат номера телефону', 'error')
+                    return redirect(url_for('add_lead'))
                 formatted_phone = phonenumbers.format_number(parsed_number, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
-            except phonenumbers.NumberParseException:
-                return redirect(url_for('add_lead', flash='Невірний формат номера телефону', type='error'))
+                app.logger.info(f"✅ Телефон відформатовано: {formatted_phone}")
+            except phonenumbers.NumberParseException as e:
+                app.logger.error(f"❌ Помилка парсингу номера: {e}")
+                flash('Невірний формат номера телефону', 'error')
+                return redirect(url_for('add_lead'))
             
             # ⚡ ОПТИМІЗАЦІЯ: Спочатку зберігаємо лід в локальній БД для швидкості
             # Потім асинхронно синхронізуємо з HubSpot
             
+            # Обробка дати народження
+            birth_date_obj = None
+            if request.form.get('birth_date'):
+                try:
+                    from datetime import datetime
+                    birth_date_obj = datetime.strptime(request.form.get('birth_date'), '%Y-%m-%d').date()
+                    app.logger.info(f"📅 Дата народження: {birth_date_obj}")
+                except (ValueError, TypeError) as e:
+                    app.logger.warning(f"⚠️ Помилка парсингу дати народження: {e}")
+                    pass
+            
+            app.logger.info("💾 Створюємо лід у локальній БД...")
             # Створюємо лід локально
             lead = Lead(
                 agent_id=current_user.id,
@@ -1859,20 +2092,29 @@ def add_lead():
                 phone=formatted_phone,
                 budget=form.budget.data,
                 notes=form.notes.data,
+                second_phone=request.form.get('second_phone', '').strip() or None,
+                company=request.form.get('company', '').strip() or None,
+                telegram_nickname=request.form.get('telegram_nickname', '').strip() or None,
+                messenger=request.form.get('messenger', '').strip() or None,
+                birth_date=birth_date_obj,
                 hubspot_contact_id=None,
                 hubspot_deal_id=None
             )
             
             db.session.add(lead)
+            app.logger.info(f"✅ Лід додано до сесії БД")
             
             # Нараховуємо поінти за створення ліда
             agent = User.query.get(form.agent_id.data)
             if agent:
+                app.logger.info(f"🎯 Нараховуємо 100 поінтів агенту {agent.username}")
                 agent.add_points(100)  # 100 поінтів за лід
                 agent.total_leads += 1
             
             # Комітимо зміни в БД ПЕРЕД HubSpot викликами
+            app.logger.info("💾 Комітимо зміни в БД...")
             db.session.commit()
+            app.logger.info(f"✅ Лід #{lead.id} успішно збережено в локальній БД!")
             
             # Ініціалізуємо HubSpot ID як None
             hubspot_contact_id = None
@@ -1892,37 +2134,56 @@ def add_lead():
                     from hubspot.crm.contacts import SimplePublicObjectInput
                     
                     try:
-                        # Шукаємо існуючий контакт за email
+                        # Шукаємо існуючий контакт за email (якщо він вказаний)
                         print(f"=== ПОШУК ІСНУЮЧОГО КОНТАКТУ ===")
-                        print(f"Пошук за email: {form.email.data}")
                         from hubspot.crm.contacts import PublicObjectSearchRequest
                         
-                        search_request = PublicObjectSearchRequest(
-                            query=form.email.data,
-                            properties=["email", "firstname", "lastname"],
-                            limit=1
-                        )
-                        existing_contacts = hubspot_client.crm.contacts.search_api.do_search(
-                            public_object_search_request=search_request
-                        )
-                        print(f"Пошук контакту за email {form.email.data}: знайдено {len(existing_contacts.results)} контактів")
-                        if existing_contacts.results:
-                            print(f"Знайдений контакт: ID={existing_contacts.results[0].id}, properties={existing_contacts.results[0].properties}")
+                        existing_contacts = None
+                        if form.email.data and form.email.data.strip():
+                            print(f"Пошук за email: {form.email.data}")
+                            search_request = PublicObjectSearchRequest(
+                                query=form.email.data,
+                                properties=["email", "firstname", "lastname"],
+                                limit=1
+                            )
+                            existing_contacts = hubspot_client.crm.contacts.search_api.do_search(
+                                public_object_search_request=search_request
+                            )
+                            print(f"Пошук контакту за email {form.email.data}: знайдено {len(existing_contacts.results)} контактів")
+                            if existing_contacts.results:
+                                print(f"Знайдений контакт: ID={existing_contacts.results[0].id}, properties={existing_contacts.results[0].properties}")
+                        else:
+                            print(f"Email не вказано, створюємо контакт тільки з телефоном")
                         
-                        if existing_contacts.results:
+                        if existing_contacts and existing_contacts.results:
                             # Контакт існує, використовуємо його
                             hubspot_contact_id = str(existing_contacts.results[0].id)
                             print(f"Використовуємо існуючий HubSpot контакт: {hubspot_contact_id}")
                         else:
                             # Контакт не існує, створюємо новий
                             print(f"=== СТВОРЕННЯ НОВОГО КОНТАКТУ ===")
-                            print(f"Контакт не знайдено, створюємо новий для {form.email.data}")
+                            print(f"Контакт не знайдено, створюємо новий")
                             contact_properties = {
-                                "email": form.email.data,
                                 "phone": formatted_phone,
                                 "firstname": form.deal_name.data.split()[0] if form.deal_name.data.split() else "Lead",
                                 "lastname": " ".join(form.deal_name.data.split()[1:]) if len(form.deal_name.data.split()) > 1 else "Client"
                             }
+                            
+                            # Додаємо email тільки якщо він заповнений
+                            if form.email.data and form.email.data.strip():
+                                contact_properties["email"] = form.email.data.strip()
+                            
+                            # Додаємо додаткові поля, якщо вони заповнені
+                            if request.form.get('second_phone', '').strip():
+                                contact_properties["phone_number_1"] = request.form.get('second_phone').strip()
+                            if request.form.get('company', '').strip():
+                                contact_properties["company"] = request.form.get('company').strip()
+                            if request.form.get('telegram_nickname', '').strip():
+                                contact_properties["telegram"] = request.form.get('telegram_nickname').strip()
+                            if request.form.get('messenger', '').strip():
+                                contact_properties["messenger"] = request.form.get('messenger').strip()
+                            if request.form.get('birth_date', '').strip():
+                                contact_properties["birthdate"] = request.form.get('birth_date').strip()
                             
                             contact_input = SimplePublicObjectInput(properties=contact_properties)
                             hubspot_contact = hubspot_client.crm.contacts.basic_api.create(contact_input)
@@ -1938,11 +2199,26 @@ def add_lead():
                         # Якщо пошук не вдався, спробуємо створити контакт
                         try:
                             contact_properties = {
-                                "email": form.email.data,
                                 "phone": formatted_phone,
                                 "firstname": form.deal_name.data.split()[0] if form.deal_name.data.split() else "Lead",
                                 "lastname": " ".join(form.deal_name.data.split()[1:]) if len(form.deal_name.data.split()) > 1 else "Client"
                             }
+                            
+                            # Додаємо email тільки якщо він заповнений
+                            if form.email.data and form.email.data.strip():
+                                contact_properties["email"] = form.email.data.strip()
+                            
+                            # Додаємо додаткові поля, якщо вони заповнені
+                            if request.form.get('second_phone', '').strip():
+                                contact_properties["phone_number_1"] = request.form.get('second_phone').strip()
+                            if request.form.get('company', '').strip():
+                                contact_properties["company"] = request.form.get('company').strip()
+                            if request.form.get('telegram_nickname', '').strip():
+                                contact_properties["telegram"] = request.form.get('telegram_nickname').strip()
+                            if request.form.get('messenger', '').strip():
+                                contact_properties["messenger"] = request.form.get('messenger').strip()
+                            if request.form.get('birth_date', '').strip():
+                                contact_properties["birthdate"] = request.form.get('birth_date').strip()
                             
                             contact_input = SimplePublicObjectInput(properties=contact_properties)
                             hubspot_contact = hubspot_client.crm.contacts.basic_api.create(contact_input)
@@ -2051,15 +2327,37 @@ def add_lead():
             
             # Повертаємо відповідь користувачу
             if hubspot_sync_success and hubspot_contact_id:
+                app.logger.info(f"🎉 УСПІХ! Лід #{lead.id} додано локально та синхронізовано з HubSpot!")
+                app.logger.info(f"   HubSpot Contact ID: {hubspot_contact_id}")
+                app.logger.info(f"   HubSpot Deal ID: {hubspot_deal_id}")
                 flash('Лід успішно додано та синхронізовано з HubSpot!', 'success')
             else:
+                app.logger.info(f"🎉 УСПІХ! Лід #{lead.id} додано локально!")
+                app.logger.warning(f"⚠️ HubSpot синхронізація не виконана або часткова")
                 flash('Лід успішно додано локально!', 'success')
             
+            app.logger.info("🔄 Перенаправлення на dashboard...")
+            app.logger.info("=" * 80)
             return redirect(url_for('dashboard'))
             
         except Exception as e:
-            return redirect(url_for('add_lead', flash=f'Помилка при додаванні ліда: {str(e)}', type='error'))
+            app.logger.error("=" * 80)
+            app.logger.error(f"❌❌❌ КРИТИЧНА ПОМИЛКА при додаванні ліда!")
+            app.logger.error(f"Тип помилки: {type(e).__name__}")
+            app.logger.error(f"Повідомлення: {str(e)}")
+            app.logger.error(f"Stack trace:\n{traceback.format_exc()}")
+            app.logger.error("=" * 80)
+            
+            flash(f'Помилка при додаванні ліда: {str(e)}', 'error')
+            return redirect(url_for('add_lead'))
     
+    # GET запит або невалідна форма
+    if request.method == 'POST':
+        app.logger.warning("⚠️ POST запит, але форма не пройшла валідацію")
+    else:
+        app.logger.info("📄 GET запит - відображаємо форму")
+    
+    app.logger.info("=" * 80)
     return render_template('add_lead.html', form=form)
 
 @app.route('/update_status/<int:lead_id>', methods=['POST'])
@@ -2112,28 +2410,6 @@ def transfer_lead(lead_id):
     })
 
 
-@app.route('/update_note_status/<int:note_id>', methods=['POST'])
-@login_required
-def update_note_status(note_id):
-    note = NoteStatus.query.get_or_404(note_id)
-    lead = Lead.query.get_or_404(note.lead_id)
-    
-    if lead.agent_id != current_user.id and current_user.role != 'admin':
-        return jsonify({'success': False, 'message': 'У вас немає прав для редагування цієї нотатки'})
-    
-    new_status = request.json.get('status')
-    if new_status not in ['sent', 'read', 'replied']:
-        return jsonify({'success': False, 'message': 'Невірний статус'})
-    
-    note.status = new_status
-    db.session.commit()
-    
-    return jsonify({
-        'success': True,
-        'message': 'Статус нотатки оновлено',
-        'new_status': new_status
-    })
-
 @app.route('/lead/<int:lead_id>')
 @login_required
 def view_lead(lead_id):
@@ -2142,19 +2418,11 @@ def view_lead(lead_id):
         flash('У вас немає прав для перегляду цього ліда')
         return redirect(url_for('dashboard'))
     
-    # Синхронізуємо конкретний лід з HubSpot
-    if hubspot_client:
-        try:
-            sync_lead_from_hubspot(lead)
-        except Exception as e:
-            print(f"Помилка синхронізації ліда {lead_id}: {e}")
+    # Синхронізація тепер відбувається автоматично у фоні кожні 60 секунд
+    # Для ручного оновлення є кнопка "Оновити" на сторінці
     
     agent = User.query.get(lead.agent_id)
-    try:
-        notes = NoteStatus.query.filter_by(lead_id=lead.id).order_by(NoteStatus.created_at.desc()).all()
-    except Exception:
-        # Якщо таблиця note_status не існує, використовуємо старі нотатки з поля notes
-        notes = []
+    notes = []  # Нотатки видалені з системи
     
     try:
         activities = Activity.query.filter_by(lead_id=lead.id).order_by(Activity.created_at.desc()).all()
@@ -2196,6 +2464,9 @@ def edit_lead(lead_id):
         form.birth_date.data = lead.birth_date.strftime('%Y-%m-%d') if lead.birth_date else ''
     
     if request.method == 'POST' and form.validate():
+        # Зберігаємо старий статус для порівняння
+        old_status = lead.status
+        
         # Оновлюємо дані ліда
         lead.deal_name = form.deal_name.data
         lead.email = form.email.data
@@ -2227,7 +2498,18 @@ def edit_lead(lead_id):
         
         db.session.commit()
         
-        flash('Лід успішно оновлено!')
+        # Якщо статус змінився, оновлюємо його в HubSpot
+        if old_status != lead.status:
+            print(f"🔄 Статус змінився з '{old_status}' на '{lead.status}', оновлюємо HubSpot...")
+            app.logger.info(f"🔄 Статус ліда {lead.id} змінився з '{old_status}' на '{lead.status}', оновлюємо HubSpot...")
+            
+            if update_hubspot_dealstage(lead, lead.status):
+                flash(f'Лід успішно оновлено! Статус синхронізовано з HubSpot.', 'success')
+            else:
+                flash(f'Лід оновлено локально, але статус не було синхронізовано з HubSpot.', 'warning')
+        else:
+            flash('Лід успішно оновлено!', 'success')
+        
         return redirect(url_for('view_lead', lead_id=lead.id))
     
     return render_template('edit_lead.html', form=form, lead=lead)
@@ -2265,59 +2547,44 @@ def sync_all_leads():
     try:
         success = sync_all_leads_from_hubspot()
         if success:
-            return jsonify({'success': True, 'message': 'Всі ліді успішно синхронізовано з HubSpot'})
+            return jsonify({'success': True, 'message': 'Всі ліди успішно синхронізовано з HubSpot'})
         else:
             return jsonify({'success': False, 'message': 'Помилка синхронізації з HubSpot'})
     except Exception as e:
         return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
 
-@app.route('/add_note/<int:lead_id>', methods=['POST'])
+@app.route('/sync_lead/<int:lead_id>', methods=['POST'])
 @login_required
-def add_note(lead_id):
-    """API endpoint для додавання нотатки до ліда"""
+def sync_single_lead(lead_id):
+    """Ручна синхронізація окремого ліда з HubSpot"""
     lead = Lead.query.get_or_404(lead_id)
     
-    # Перевіряємо доступ до ліда
-    if current_user.role == 'agent' and lead.agent_id != current_user.id:
-        return jsonify({'success': False, 'message': 'Доступ заборонено'}), 403
+    # Перевірка прав доступу
+    if lead.agent_id != current_user.id and current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'У вас немає прав для синхронізації цього ліда'})
     
-    data = request.get_json()
-    note_text = data.get('note_text', '').strip()
-    
-    if not note_text:
-        return jsonify({'success': False, 'message': 'Текст нотатки не може бути порожнім'}), 400
+    if not hubspot_client:
+        return jsonify({'success': False, 'message': 'HubSpot API не налаштований'})
     
     try:
-        # Створюємо нотатку в локальній БД
-        new_note = NoteStatus(
-            lead_id=lead.id,
-            note_text=note_text,
-            status='read'
-        )
-        db.session.add(new_note)
-        
-        # Створюємо нотатку в HubSpot
-        hubspot_success = create_note_in_hubspot(lead, note_text)
-        
-        if hubspot_success:
-            db.session.commit()
+        success = sync_lead_from_hubspot(lead)
+        if success:
+            from datetime import datetime
+            # Форматуємо час останньої синхронізації
+            if lead.last_sync_at:
+                last_sync = lead.last_sync_at.strftime('%d.%m.%Y %H:%M')
+            else:
+                last_sync = 'Невідомо'
+            
             return jsonify({
                 'success': True, 
-                'message': 'Нотатку додано та синхронізовано з HubSpot',
-                'note_id': new_note.id
+                'message': 'Лід успішно синхронізовано з HubSpot',
+                'last_sync_at': last_sync
             })
         else:
-            # Якщо HubSpot не працює, все одно зберігаємо локально
-            db.session.commit()
-            return jsonify({
-                'success': True, 
-                'message': 'Нотатку додано локально (HubSpot недоступний)',
-                'note_id': new_note.id
-            })
-            
+            return jsonify({'success': False, 'message': 'Помилка синхронізації з HubSpot'})
     except Exception as e:
-        db.session.rollback()
-        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'}), 500
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
 
 @app.route('/admin/users')
 @login_required
@@ -2582,7 +2849,6 @@ def upload_user_document(user_id):
         app.logger.error(f"❌❌❌ КРИТИЧНА ПОМИЛКА ❌❌❌")
         app.logger.error(f"   Тип помилки: {type(e).__name__}")
         app.logger.error(f"   Повідомлення: {str(e)}")
-        import traceback
         app.logger.error(f"   Traceback:\n{traceback.format_exc()}")
         return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
 
@@ -2645,11 +2911,28 @@ def check_phone_number():
         app.logger.info(f"   Очищений номер: '{clean_phone}'")
         
         # Шукаємо ліди з схожими номерами
-        # Очищаємо номери в БД від нецифрових символів (пробіли, дефіси, плюси тощо)
-        # і порівнюємо з очищеним введеним номером
-        matching_leads = Lead.query.filter(
-            func.regexp_replace(Lead.phone, '[^0-9]', '', 'g').like(f'%{clean_phone}%')
-        ).limit(10).all()
+        # Різна логіка для PostgreSQL та SQLite
+        database_uri = app.config['SQLALCHEMY_DATABASE_URI']
+        
+        if database_uri.startswith('postgresql'):
+            # PostgreSQL підтримує regexp_replace
+            matching_leads = Lead.query.filter(
+                func.regexp_replace(Lead.phone, '[^0-9]', '', 'g').like(f'%{clean_phone}%')
+            ).limit(10).all()
+        else:
+            # Для SQLite використовуємо простий LIKE (номери вже відформатовані)
+            # Шукаємо по частковому співпадінню
+            matching_leads = Lead.query.filter(
+                Lead.phone.like(f'%{clean_phone}%')
+            ).limit(10).all()
+            
+            # Додаткова фільтрація в Python для SQLite
+            filtered_leads = []
+            for lead in matching_leads:
+                lead_clean = ''.join(filter(str.isdigit, lead.phone or ''))
+                if clean_phone in lead_clean:
+                    filtered_leads.append(lead)
+            matching_leads = filtered_leads[:10]
         
         app.logger.info(f"   Знайдено збігів: {len(matching_leads)}")
         
@@ -2680,7 +2963,6 @@ def check_phone_number():
         
     except Exception as e:
         app.logger.error(f"❌ Помилка при перевірці номера: {e}")
-        import traceback
         app.logger.error(traceback.format_exc())
         return jsonify({
             'success': False,
@@ -2810,14 +3092,441 @@ def internal_error(error):
     
     return render_template('error.html', error="Внутрішня помилка сервера"), 500
 
+@app.route('/admin/hubspot-stages', methods=['GET'])
+@login_required
+def get_hubspot_stages():
+    """Отримати всі стадії (stages) з HubSpot pipeline для налаштування маппінгу"""
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Доступ тільки для адміністратора'})
+    
+    if not hubspot_client:
+        return jsonify({'success': False, 'message': 'HubSpot API не налаштований'})
+    
+    try:
+        # Отримуємо інформацію про pipeline "Лиды" (ID: 2341107958)
+        pipeline = hubspot_client.crm.pipelines.pipelines_api.get_by_id(
+            object_type='deals',
+            pipeline_id='2341107958'
+        )
+        
+        stages_info = []
+        for stage in pipeline.stages:
+            stages_info.append({
+                'id': stage.id,
+                'label': stage.label,
+                'display_order': stage.display_order
+            })
+        
+        # Також отримуємо, які dealstage є в поточних лідах
+        leads_with_hubspot = Lead.query.filter(Lead.hubspot_deal_id.isnot(None)).limit(20).all()
+        current_stages = {}
+        
+        for lead in leads_with_hubspot:
+            if lead.hubspot_deal_id:
+                try:
+                    deal = hubspot_client.crm.deals.basic_api.get_by_id(
+                        deal_id=lead.hubspot_deal_id,
+                        properties=["dealstage"]
+                    )
+                    stage_id = deal.properties.get('dealstage')
+                    if stage_id:
+                        if stage_id not in current_stages:
+                            current_stages[stage_id] = {
+                                'count': 0,
+                                'leads_sample': []
+                            }
+                        current_stages[stage_id]['count'] += 1
+                        if len(current_stages[stage_id]['leads_sample']) < 3:
+                            current_stages[stage_id]['leads_sample'].append({
+                                'id': lead.id,
+                                'name': lead.deal_name,
+                                'current_status': lead.status
+                            })
+                except Exception as e:
+                    print(f"Помилка отримання deal {lead.hubspot_deal_id}: {e}")
+        
+        return jsonify({
+            'success': True,
+            'pipeline_stages': stages_info,
+            'current_stages_usage': current_stages,
+            'current_mapping': {
+                '3206423796': 'new (Новая заявка)',
+                '3204738255': 'new (Вовремя не обработан)',
+                '3204738256': 'contacted (Недозвон)',
+                '3204738257': 'contacted (Звонок успешный)',
+                '3204738258': 'contacted (Запрос получен)',
+                '3204738259': 'qualified (Отправлены варианты)',
+                '3204738260': 'qualified (Передан на партнеров)',
+                '3204738261': 'qualified (Назначена встреча)',
+                '3204738262': 'qualified (Встреча проведена)',
+                '3204738263': 'qualified (Тур назначен)',
+                '3204738264': 'qualified (Тур проведен)',
+                '3204738265': 'qualified (Переговоры)',
+                '3204738266': 'qualified (Задаток)',
+                '3204738267': 'closed (Сделка закрыта)',
+                '3204738268': 'closed (Мусор)'
+            }
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Помилка отримання stages з HubSpot: {e}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
+
+
+# ==================== PROPERTY ROUTES ====================
+
+@app.route('/properties')
+@login_required
+def properties():
+    """Список всіх нерухомості"""
+    properties = Property.query.order_by(Property.created_at.desc()).all()
+    return render_template('properties.html', properties=properties)
+
+
+@app.route('/properties/<int:property_id>')
+@login_required
+def property_detail(property_id):
+    """Детальна інформація про нерухомість"""
+    property_obj = Property.query.get_or_404(property_id)
+    return render_template('property_detail.html', property=property_obj)
+
+
+@app.route('/properties/create', methods=['GET', 'POST'])
+@login_required
+def create_property():
+    """Створення нової нерухомості (тільки для адмінів)"""
+    if current_user.role != 'admin':
+        flash('Доступ заборонено. Тільки адміністратори можуть створювати нерухомість.', 'error')
+        return redirect(url_for('properties'))
+    
+    form = PropertyForm()
+    if form.validate_on_submit():
+        try:
+            property_obj = Property(
+                name=form.name.data,
+                location_country=form.location_country.data,
+                location_city=form.location_city.data,
+                location_district=form.location_district.data,
+                price_from=form.price_from.data,
+                price_to=form.price_to.data if form.price_to.data else None,
+                payment_type=form.payment_type.data,
+                created_by=current_user.id
+            )
+            
+            db.session.add(property_obj)
+            db.session.commit()
+            
+            flash('Нерухомість успішно створена!', 'success')
+            return redirect(url_for('property_detail', property_id=property_obj.id))
+            
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Помилка створення нерухомості: {e}")
+            flash('Помилка при створенні нерухомості.', 'error')
+    
+    return render_template('create_property.html', form=form)
+
+
+@app.route('/properties/<int:property_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_property(property_id):
+    """Редагування нерухомості (тільки для адмінів)"""
+    if current_user.role != 'admin':
+        flash('Доступ заборонено. Тільки адміністратори можуть редагувати нерухомість.', 'error')
+        return redirect(url_for('properties'))
+    
+    property_obj = Property.query.get_or_404(property_id)
+    form = PropertyForm(obj=property_obj)
+    
+    if form.validate_on_submit():
+        try:
+            property_obj.name = form.name.data
+            property_obj.location_country = form.location_country.data
+            property_obj.location_city = form.location_city.data
+            property_obj.location_district = form.location_district.data
+            property_obj.price_from = form.price_from.data
+            property_obj.price_to = form.price_to.data if form.price_to.data else None
+            property_obj.payment_type = form.payment_type.data
+            
+            db.session.commit()
+            
+            flash('Нерухомість успішно оновлена!', 'success')
+            return redirect(url_for('property_detail', property_id=property_obj.id))
+            
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Помилка оновлення нерухомості: {e}")
+            flash('Помилка при оновленні нерухомості.', 'error')
+    
+    return render_template('edit_property.html', form=form, property=property_obj)
+
+
+@app.route('/properties/<int:property_id>/delete', methods=['POST'])
+@login_required
+def delete_property(property_id):
+    """Видалення нерухомості (тільки для адмінів)"""
+    if current_user.role != 'admin':
+        flash('Доступ заборонено. Тільки адміністратори можуть видаляти нерухомість.', 'error')
+        return redirect(url_for('properties'))
+    
+    property_obj = Property.query.get_or_404(property_id)
+    
+    try:
+        # Видаляємо всі пов'язані файли з S3
+        for photo in property_obj.photos:
+            delete_file_from_s3(photo.filename)
+        
+        for unit in property_obj.units:
+            for unit_photo in unit.photos:
+                delete_file_from_s3(unit_photo.filename)
+        
+        for document in property_obj.documents:
+            delete_file_from_s3(document.filename)
+        
+        db.session.delete(property_obj)
+        db.session.commit()
+        
+        flash('Нерухомість успішно видалена!', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Помилка видалення нерухомості: {e}")
+        flash('Помилка при видаленні нерухомості.', 'error')
+    
+    return redirect(url_for('properties'))
+
+
+@app.route('/properties/<int:property_id>/units/add', methods=['POST'])
+@login_required
+def add_property_unit(property_id):
+    """Додавання планування до нерухомості (тільки для адмінів)"""
+    app.logger.info(f"📋 === ДОДАВАННЯ ПЛАНУВАННЯ ===")
+    app.logger.info(f"   Property ID: {property_id}")
+    app.logger.info(f"   User: {current_user.username} (role: {current_user.role})")
+    
+    if current_user.role != 'admin':
+        app.logger.warning("⚠️ Доступ заборонено - користувач не адмін")
+        return jsonify({'success': False, 'message': 'Доступ заборонено'})
+    
+    property_obj = Property.query.get_or_404(property_id)
+    
+    try:
+        # Отримуємо дані з JSON
+        data = request.get_json()
+        app.logger.info(f"   Отримані дані: {data}")
+        
+        # Валідуємо дані
+        if not data or 'unit_type' not in data or 'size_from' not in data or 'price_per_unit' not in data:
+            app.logger.error("❌ Відсутні обов'язкові поля")
+            return jsonify({'success': False, 'message': 'Невалідні дані - відсутні обов\'язкові поля'})
+        
+        # Створюємо планування
+        unit = PropertyUnit(
+            property_id=property_id,
+            unit_type=data['unit_type'],
+            size_from=float(data['size_from']),
+            size_to=float(data['size_to']) if data.get('size_to') else None,
+            price_per_unit=float(data['price_per_unit'])
+        )
+        
+        db.session.add(unit)
+        db.session.commit()
+        
+        app.logger.info(f"✅ Планування додано успішно: ID={unit.id}")
+        return jsonify({'success': True, 'message': 'Планування додано успішно!'})
+        
+    except ValueError as e:
+        db.session.rollback()
+        app.logger.error(f"❌ Помилка валідації даних: {e}")
+        return jsonify({'success': False, 'message': 'Невалідні дані - перевірте числові значення'})
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"❌ Помилка додавання планування: {type(e).__name__}: {str(e)}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'message': f'Помилка при додаванні планування: {str(e)}'})
+
+
+@app.route('/properties/<int:property_id>/units/<int:unit_id>/delete', methods=['POST'])
+@login_required
+def delete_property_unit(property_id, unit_id):
+    """Видалення планування (тільки для адмінів)"""
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Доступ заборонено'})
+    
+    unit = PropertyUnit.query.get_or_404(unit_id)
+    
+    try:
+        # Видаляємо фото планування з S3
+        for photo in unit.photos:
+            delete_file_from_s3(photo.filename)
+        
+        db.session.delete(unit)
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Планування видалено успішно!'})
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Помилка видалення планування: {e}")
+        return jsonify({'success': False, 'message': 'Помилка при видаленні планування'})
+
+
+@app.route('/properties/<int:property_id>/upload-photos', methods=['POST'])
+@login_required
+def upload_property_photos(property_id):
+    """Завантаження фото нерухомості в S3 (тільки для адмінів)"""
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Доступ заборонено'})
+    
+    property_obj = Property.query.get_or_404(property_id)
+    
+    if 'photos' not in request.files:
+        return jsonify({'success': False, 'message': 'Файли не вибрані'})
+    
+    files = request.files.getlist('photos')
+    uploaded_files = []
+    
+    try:
+        for file in files:
+            if file and file.filename:
+                # Перевіряємо тип файлу
+                if not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                    continue
+                
+                # Генеруємо унікальне ім'я файлу для S3
+                unique_filename = f"properties/{property_id}_{int(time.time())}_{file.filename}"
+                
+                # Завантажуємо файл в S3
+                s3_url = upload_file_to_s3(file, unique_filename)
+                
+                # Додаємо запис в базу даних
+                photo = PropertyPhoto(
+                    property_id=property_id,
+                    filename=unique_filename,  # Зберігаємо шлях в S3 або локально
+                    file_path=s3_url,  # URL файлу в S3 або локально
+                    file_size=len(file.read()),
+                    file_type=file.content_type
+                )
+                file.seek(0)  # Повертаємо позицію файлу на початок
+                db.session.add(photo)
+                uploaded_files.append(unique_filename)
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'Завантажено {len(uploaded_files)} фото'})
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Помилка завантаження фото в S3: {e}")
+        return jsonify({'success': False, 'message': 'Помилка при завантаженні фото'})
+
+
+@app.route('/properties/<int:property_id>/upload-documents', methods=['POST'])
+@login_required
+def upload_property_documents(property_id):
+    """Завантаження документів нерухомості в S3 (тільки для адмінів, максимум 5)"""
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Доступ заборонено'})
+    
+    property_obj = Property.query.get_or_404(property_id)
+    
+    # Перевіряємо кількість документів
+    if len(property_obj.documents) >= 5:
+        return jsonify({'success': False, 'message': 'Максимум 5 документів на проект'})
+    
+    if 'documents' not in request.files:
+        return jsonify({'success': False, 'message': 'Файли не вибрані'})
+    
+    files = request.files.getlist('documents')
+    uploaded_files = []
+    
+    try:
+        for file in files:
+            if file and file.filename and len(property_obj.documents) + len(uploaded_files) < 5:
+                # Перевіряємо тип файлу
+                if not file.filename.lower().endswith(('.pdf', '.doc', '.docx', '.txt')):
+                    continue
+                
+                # Генеруємо унікальне ім'я файлу для S3
+                unique_filename = f"documents/{property_id}_{int(time.time())}_{file.filename}"
+                
+                # Завантажуємо файл в S3
+                s3_url = upload_file_to_s3(file, unique_filename)
+                
+                # Додаємо запис в базу даних
+                document = PropertyDocument(
+                    property_id=property_id,
+                    filename=unique_filename,  # Зберігаємо шлях в S3
+                    file_path=s3_url,  # URL файлу в S3
+                    file_size=len(file.read()),
+                    file_type=file.content_type,
+                    description=request.form.get('description', '')
+                )
+                file.seek(0)  # Повертаємо позицію файлу на початок
+                db.session.add(document)
+                uploaded_files.append(unique_filename)
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'Завантажено {len(uploaded_files)} документів'})
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Помилка завантаження документів в S3: {e}")
+        return jsonify({'success': False, 'message': 'Помилка при завантаженні документів'})
+
+
+@app.route('/units/<int:unit_id>/upload-photos', methods=['POST'])
+@login_required
+def upload_unit_photos(unit_id):
+    """Завантаження фото планування в S3 (тільки для адмінів)"""
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Доступ заборонено'})
+    
+    unit = PropertyUnit.query.get_or_404(unit_id)
+    
+    if 'photos' not in request.files:
+        return jsonify({'success': False, 'message': 'Файли не вибрані'})
+    
+    files = request.files.getlist('photos')
+    uploaded_files = []
+    
+    try:
+        for file in files:
+            if file and file.filename:
+                # Перевіряємо тип файлу
+                if not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                    continue
+                
+                # Генеруємо унікальне ім'я файлу для S3
+                unique_filename = f"units/{unit_id}_{int(time.time())}_{file.filename}"
+                
+                # Завантажуємо файл в S3
+                s3_url = upload_file_to_s3(file, unique_filename)
+                
+                # Додаємо запис в базу даних
+                photo = UnitPhoto(
+                    unit_id=unit_id,
+                    filename=unique_filename,  # Зберігаємо шлях в S3
+                    file_path=s3_url,  # URL файлу в S3
+                    file_size=len(file.read()),
+                    file_type=file.content_type
+                )
+                file.seek(0)  # Повертаємо позицію файлу на початок
+                db.session.add(photo)
+                uploaded_files.append(unique_filename)
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'Завантажено {len(uploaded_files)} фото планування'})
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Помилка завантаження фото планування в S3: {e}")
+        return jsonify({'success': False, 'message': 'Помилка при завантаженні фото планування'})
+
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-        # Створюємо таблицю для нотаток, якщо вона не існує
-        try:
-            NoteStatus.query.first()
-        except:
-            db.create_all()
         
         # Створюємо адміна якщо його немає
         admin = User.query.filter_by(username='admin').first()
@@ -2832,5 +3541,8 @@ if __name__ == '__main__':
             db.session.add(admin)
             db.session.commit()
             print("Створено адміна: username='admin', password='admin123'")
+    
+    # Запускаємо фонову синхронізацію з HubSpot
+    start_background_sync()
     
     app.run(debug=True)

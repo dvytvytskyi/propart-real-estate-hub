@@ -1,0 +1,871 @@
+{% extends "base.html" %}
+
+{% block title %}Редагувати {{ property.name }} - Real Estate Agents Hub{% endblock %}
+
+{% block content %}
+<style>
+.property-form-wrapper {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.form-section {
+    background: white;
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    border: 1px solid #e5e7eb;
+}
+
+.section-header {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #f3f4f6;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.section-header i {
+    color: #6b7280;
+    font-size: 18px;
+}
+
+.form-control, .form-select {
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 14px;
+    transition: all 0.2s;
+    height: 42px;
+}
+
+textarea.form-control {
+    height: auto;
+    min-height: 42px;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.form-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 6px;
+}
+
+.input-group-text {
+    background: #f9fafb;
+    border: 1px solid #d1d5db;
+    color: #6b7280;
+    font-weight: 500;
+}
+
+.btn-add-unit {
+    background: #f3f4f6;
+    border: 2px dashed #d1d5db;
+    color: #4b5563;
+    padding: 12px 24px;
+    border-radius: 6px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.btn-add-unit:hover {
+    background: #e5e7eb;
+    border-color: #9ca3af;
+    color: #1f2937;
+}
+
+.unit-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    background: #fafafa;
+    transition: all 0.2s;
+}
+
+.unit-card:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.unit-card h6 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 12px;
+}
+
+.unit-card p {
+    font-size: 13px;
+    color: #6b7280;
+    margin-bottom: 12px;
+}
+
+.photo-preview-card, .doc-preview-item {
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    overflow: hidden;
+    transition: all 0.2s;
+}
+
+.photo-preview-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.form-text {
+    font-size: 12px;
+    color: #9ca3af;
+    margin-top: 4px;
+}
+
+.btn-primary {
+    background: #3b82f6;
+    border: none;
+    padding: 12px 32px;
+    font-weight: 500;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.btn-primary:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.btn-secondary {
+    background: white;
+    border: 1px solid #d1d5db;
+    color: #6b7280;
+    padding: 12px 32px;
+    font-weight: 500;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+    background: #f9fafb;
+    border-color: #9ca3af;
+    color: #374151;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.page-header h1 {
+    font-size: 24px;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0;
+}
+
+.btn-outline-secondary {
+    border: 1px solid #d1d5db;
+    color: #6b7280;
+    padding: 8px 16px;
+    font-size: 14px;
+    border-radius: 6px;
+}
+
+.btn-outline-secondary:hover {
+    background: #f9fafb;
+    border-color: #9ca3af;
+    color: #374151;
+}
+
+.list-group-item {
+    border: 1px solid #e5e7eb;
+    margin-bottom: 8px;
+    border-radius: 6px;
+}
+
+.list-group-item:last-child {
+    margin-bottom: 0;
+}
+
+.text-muted {
+    color: #9ca3af !important;
+}
+
+.btn-outline-danger {
+    border: 1px solid #f87171;
+    color: #dc2626;
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 5px;
+    transition: all 0.2s;
+}
+
+.btn-outline-danger:hover {
+    background: #dc2626;
+    color: white;
+    border-color: #dc2626;
+}
+
+/* Модальне вікно */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+    animation: fadeIn 0.2s;
+}
+
+.modal-overlay.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    animation: slideUp 0.3s;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-header {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-body .form-group {
+    margin-bottom: 16px;
+}
+
+.modal-body .form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 6px;
+}
+
+.modal-body .form-control {
+    width: 100%;
+}
+
+.modal-footer {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #f3f4f6;
+}
+
+.modal-footer .btn {
+    padding: 10px 24px;
+    font-size: 14px;
+}
+
+.btn-cancel {
+    background: white;
+    border: 1px solid #d1d5db;
+    color: #6b7280;
+    padding: 10px 24px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-cancel:hover {
+    background: #f9fafb;
+    border-color: #9ca3af;
+    color: #374151;
+}
+
+.btn-confirm {
+    background: #3b82f6;
+    border: none;
+    color: white;
+    padding: 10px 24px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-confirm:hover {
+    background: #2563eb;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.form-hint {
+    font-size: 12px;
+    color: #9ca3af;
+    margin-top: 4px;
+}
+
+.error-message {
+    font-size: 12px;
+    color: #dc2626;
+    margin-top: 4px;
+    display: none;
+}
+
+.error-message.active {
+    display: block;
+}
+
+.form-control.error, .form-select.error {
+    border-color: #dc2626;
+}
+
+.form-control.error:focus, .form-select.error:focus {
+    border-color: #dc2626;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+}
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse">
+            {% set active_page = 'properties' %}
+            {% include 'components/sidebar.html' %}
+        </div>
+
+        <!-- Main content -->
+        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 py-4">
+            <div class="property-form-wrapper">
+                <div class="page-header">
+                    <h1>Редагувати: {{ property.name }}</h1>
+                    <a href="{{ url_for('property_detail', property_id=property.id) }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Назад
+                    </a>
+                </div>
+
+                <form method="POST" enctype="multipart/form-data" id="editPropertyForm">
+                    {{ form.hidden_tag() }}
+                    
+                    <!-- Основна інформація -->
+                    <div class="form-section">
+                        <div class="section-header">
+                            <i class="fas fa-info-circle"></i>
+                            <span>Основна інформація</span>
+                        </div>
+                        
+                        <div class="mb-3">
+                            {{ form.name.label(class="form-label") }}
+                            {{ form.name(class="form-control" + (" is-invalid" if form.name.errors else ""), placeholder="Введіть назву проекту") }}
+                            {% if form.name.errors %}
+                                <div class="invalid-feedback">
+                                    {% for error in form.name.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                {{ form.location_country.label(class="form-label") }}
+                                {{ form.location_country(class="form-select" + (" is-invalid" if form.location_country.errors else "")) }}
+                                {% if form.location_country.errors %}
+                                    <div class="invalid-feedback">
+                                        {% for error in form.location_country.errors %}{{ error }}{% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                {{ form.location_city.label(class="form-label") }}
+                                {{ form.location_city(class="form-control" + (" is-invalid" if form.location_city.errors else ""), placeholder="Місто") }}
+                                {% if form.location_city.errors %}
+                                    <div class="invalid-feedback">
+                                        {% for error in form.location_city.errors %}{{ error }}{% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                {{ form.location_district.label(class="form-label") }}
+                                {{ form.location_district(class="form-control" + (" is-invalid" if form.location_district.errors else ""), placeholder="Район (необов'язково)") }}
+                                {% if form.location_district.errors %}
+                                    <div class="invalid-feedback">
+                                        {% for error in form.location_district.errors %}{{ error }}{% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                {{ form.price_from.label(class="form-label") }}
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    {{ form.price_from(class="form-control" + (" is-invalid" if form.price_from.errors else ""), placeholder="100000") }}
+                                </div>
+                                {% if form.price_from.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.price_from.errors %}{{ error }}{% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                {{ form.price_to.label(class="form-label") }}
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    {{ form.price_to(class="form-control" + (" is-invalid" if form.price_to.errors else ""), placeholder="500000") }}
+                                </div>
+                                {% if form.price_to.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.price_to.errors %}{{ error }}{% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="mb-0">
+                            {{ form.payment_type.label(class="form-label") }}
+                            {{ form.payment_type(class="form-control" + (" is-invalid" if form.payment_type.errors else ""), rows="2", placeholder="Наприклад: 30% при підписанні, 70% протягом 2 років") }}
+                            <small class="form-text">Опишіть умови оплати для клієнтів</small>
+                            {% if form.payment_type.errors %}
+                                <div class="invalid-feedback">
+                                    {% for error in form.payment_type.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Планування квартир -->
+                    <div class="form-section">
+                        <div class="section-header">
+                            <i class="fas fa-th"></i>
+                            <span>Планування квартир</span>
+                        </div>
+                        
+                        <button type="button" class="btn btn-add-unit mb-3" onclick="addUnit()">
+                            <i class="fas fa-plus"></i> Додати планування
+                        </button>
+                        
+                        <div id="unitsList" class="row"></div>
+                    </div>
+
+                    <!-- Існуючі фото -->
+                    {% if property.photos %}
+                    <div class="form-section">
+                        <div class="section-header">
+                            <i class="fas fa-images"></i>
+                            <span>Існуючі фото</span>
+                        </div>
+                        
+                        <div class="row">
+                            {% for photo in property.photos %}
+                            <div class="col-md-3 col-sm-6 mb-3">
+                                <div class="photo-preview-card">
+                                    <img src="{{ photo.file_path }}" class="w-100" style="height: 180px; object-fit: cover;" alt="Фото">
+                                    <div class="p-2" style="background: #fafafa; text-align: center;">
+                                        <small style="font-size: 11px; color: #9ca3af;">Фото {{ loop.index }}</small>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <small class="form-text">Для зміни фото перейдіть на сторінку перегляду проекту</small>
+                    </div>
+                    {% endif %}
+
+                    <!-- Фото проекту -->
+                    <div class="form-section">
+                        <div class="section-header">
+                            <i class="fas fa-camera"></i>
+                            <span>{% if property.photos %}Додати нові фото{% else %}Фото проекту{% endif %}</span>
+                        </div>
+                        
+                        <div class="mb-0">
+                            <label class="form-label">Завантажте фотографії</label>
+                            <input type="file" class="form-control" name="photos" multiple accept="image/*" id="photoInput">
+                            <small class="form-text">Формати: JPG, PNG, GIF. Можна вибрати кілька файлів</small>
+                        </div>
+                        <div id="photoPreview" class="row mt-3"></div>
+                    </div>
+
+                    <!-- Існуючі документи -->
+                    {% if property.documents %}
+                    <div class="form-section">
+                        <div class="section-header">
+                            <i class="fas fa-file-alt"></i>
+                            <span>Існуючі документи</span>
+                        </div>
+                        
+                        <div class="list-group">
+                            {% for document in property.documents %}
+                            <div class="list-group-item doc-preview-item d-flex align-items-center" style="font-size: 13px; padding: 12px;">
+                                <i class="fas fa-file-pdf text-danger me-2" style="font-size: 20px;"></i>
+                                <div class="flex-grow-1">
+                                    <div style="font-weight: 500; color: #1f2937;">{{ document.filename }}</div>
+                                    {% if document.description %}
+                                    <small style="color: #9ca3af;">{{ document.description }}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <small class="form-text mt-2 d-block">Для зміни документів перейдіть на сторінку перегляду проекту</small>
+                    </div>
+                    {% endif %}
+
+                    <!-- Документи -->
+                    <div class="form-section">
+                        <div class="section-header">
+                            <i class="fas fa-file-pdf"></i>
+                            <span>{% if property.documents %}Додати нові документи{% else %}Документи проекту{% endif %}</span>
+                        </div>
+                        
+                        <div class="mb-0">
+                            <label class="form-label">Завантажте документи (максимум 5)</label>
+                            <input type="file" class="form-control" name="documents" multiple accept=".pdf,.doc,.docx" id="documentInput" onchange="validateDocuments()">
+                            <small class="form-text">Формати: PDF, DOC, DOCX. Максимум 5 файлів</small>
+                        </div>
+                        <div id="documentPreview" class="mt-3"></div>
+                    </div>
+
+                    <!-- Кнопки дій -->
+                    <div class="form-section" style="background: transparent; border: none; box-shadow: none; padding: 0;">
+                        <div class="d-flex gap-3 justify-content-end">
+                            <a href="{{ url_for('property_detail', property_id=property.id) }}" class="btn btn-secondary">
+                                Скасувати
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Зберегти зміни
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </main>
+    </div>
+</div>
+
+<!-- Скриті поля для планувань -->
+<div id="unitsData"></div>
+
+<!-- Модальне вікно для додавання планування -->
+<div id="unitModal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="modal-header">
+            <i class="fas fa-plus-circle" style="color: #3b82f6;"></i>
+            Додати планування
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="unitType">Тип планування *</label>
+                <select id="unitType" class="form-select">
+                    <option value="">Оберіть тип</option>
+                    <option value="studio">Studio</option>
+                    <option value="1">1 кімната</option>
+                    <option value="2">2 кімнати</option>
+                    <option value="3">3 кімнати</option>
+                    <option value="4">4 кімнати</option>
+                    <option value="5">5 кімнат</option>
+                    <option value="6">6 кімнат</option>
+                </select>
+                <div class="error-message" id="unitTypeError">Оберіть тип планування</div>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="sizeFrom">Розмір від (м²) *</label>
+                        <input type="number" id="sizeFrom" class="form-control" placeholder="50" min="0" step="0.1">
+                        <div class="error-message" id="sizeFromError">Введіть коректний розмір</div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="sizeTo">Розмір до (м²)</label>
+                        <input type="number" id="sizeTo" class="form-control" placeholder="80" min="0" step="0.1">
+                        <div class="form-hint">Необов'язково</div>
+                        <div class="error-message" id="sizeToError">Введіть коректний розмір</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="pricePerUnit">Ціна за юніт ($) *</label>
+                <input type="number" id="pricePerUnit" class="form-control" placeholder="150000" min="0" step="1000">
+                <div class="error-message" id="pricePerUnitError">Введіть коректну ціну</div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-cancel" onclick="closeUnitModal()">Скасувати</button>
+            <button type="button" class="btn-confirm" onclick="saveUnit()">
+                <i class="fas fa-check"></i> Додати
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+let units = [];
+let unitIdCounter = 0;
+
+// Завантажуємо існуючі планування з бази даних
+{% if property.units %}
+units = [
+    {% for unit in property.units %}
+    {
+        id: unitIdCounter++,
+        unit_type: "{{ unit.unit_type }}",
+        size_from: {{ unit.size_from }},
+        size_to: {{ unit.size_to if unit.size_to else 'null' }},
+        price_per_unit: {{ unit.price_per_unit }}
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+];
+unitIdCounter = units.length;
+{% endif %}
+
+// Відкриття модального вікна
+function addUnit() {
+    document.getElementById('unitModal').classList.add('active');
+    clearUnitFormErrors();
+    document.getElementById('unitType').value = '';
+    document.getElementById('sizeFrom').value = '';
+    document.getElementById('sizeTo').value = '';
+    document.getElementById('pricePerUnit').value = '';
+    setTimeout(() => document.getElementById('unitType').focus(), 100);
+}
+
+// Закриття модального вікна
+function closeUnitModal() {
+    document.getElementById('unitModal').classList.remove('active');
+    clearUnitFormErrors();
+}
+
+// Очистка помилок форми
+function clearUnitFormErrors() {
+    document.getElementById('unitType').classList.remove('error');
+    document.getElementById('sizeFrom').classList.remove('error');
+    document.getElementById('sizeTo').classList.remove('error');
+    document.getElementById('pricePerUnit').classList.remove('error');
+    
+    document.getElementById('unitTypeError').classList.remove('active');
+    document.getElementById('sizeFromError').classList.remove('active');
+    document.getElementById('sizeToError').classList.remove('active');
+    document.getElementById('pricePerUnitError').classList.remove('active');
+}
+
+// Показ помилки для поля
+function showFieldError(fieldId, errorId) {
+    document.getElementById(fieldId).classList.add('error');
+    document.getElementById(errorId).classList.add('active');
+}
+
+// Збереження планування
+function saveUnit() {
+    clearUnitFormErrors();
+    
+    const unitType = document.getElementById('unitType').value;
+    const sizeFrom = parseFloat(document.getElementById('sizeFrom').value);
+    const sizeTo = document.getElementById('sizeTo').value ? parseFloat(document.getElementById('sizeTo').value) : null;
+    const pricePerUnit = parseFloat(document.getElementById('pricePerUnit').value);
+    
+    let hasErrors = false;
+    
+    // Валідація
+    if (!unitType) {
+        showFieldError('unitType', 'unitTypeError');
+        hasErrors = true;
+    }
+    
+    if (isNaN(sizeFrom) || sizeFrom <= 0) {
+        showFieldError('sizeFrom', 'sizeFromError');
+        hasErrors = true;
+    }
+    
+    if (sizeTo !== null && (isNaN(sizeTo) || sizeTo <= 0)) {
+        showFieldError('sizeTo', 'sizeToError');
+        hasErrors = true;
+    }
+    
+    if (isNaN(pricePerUnit) || pricePerUnit <= 0) {
+        showFieldError('pricePerUnit', 'pricePerUnitError');
+        hasErrors = true;
+    }
+    
+    if (hasErrors) return;
+    
+    // Додаємо юніт
+    const unit = {
+        id: unitIdCounter++,
+        unit_type: unitType,
+        size_from: sizeFrom,
+        size_to: sizeTo,
+        price_per_unit: pricePerUnit
+    };
+    
+    units.push(unit);
+    renderUnits();
+    closeUnitModal();
+}
+
+// Закриття модалки по кліку на overlay
+document.getElementById('unitModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeUnitModal();
+    }
+});
+
+// Підтримка клавіатури (Enter для збереження, Escape для закриття)
+document.addEventListener('keydown', function(e) {
+    const modal = document.getElementById('unitModal');
+    if (modal.classList.contains('active')) {
+        if (e.key === 'Escape') {
+            closeUnitModal();
+        } else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+            e.preventDefault();
+            saveUnit();
+        }
+    }
+});
+
+// Видалення планування
+function removeUnit(unitId) {
+    if (confirm("Ви впевнені, що хочете видалити це планування?")) {
+        units = units.filter(u => u.id !== unitId);
+        renderUnits();
+    }
+}
+
+// Відображення планувань
+function renderUnits() {
+    const container = document.getElementById('unitsList');
+    
+    if (units.length === 0) {
+        container.innerHTML = '<div class="col-12"><p class="text-muted" style="font-size: 14px; margin: 0;">Планування не додано. Натисніть кнопку вище для додавання.</p></div>';
+    } else {
+        container.innerHTML = units.map(unit => {
+            const unitTypeLabel = unit.unit_type === 'studio' ? 'Studio' : unit.unit_type + ' кімнат' + (unit.unit_type > 1 && unit.unit_type < 5 ? 'и' : '');
+            const sizeLabel = unit.size_to ? `${unit.size_from} - ${unit.size_to} м²` : `від ${unit.size_from} м²`;
+            
+            return `
+                <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="unit-card">
+                        <h6>${unitTypeLabel}</h6>
+                        <p>
+                            <strong>Розмір:</strong> ${sizeLabel}<br>
+                            <strong>Ціна:</strong> $${unit.price_per_unit.toLocaleString()}
+                        </p>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeUnit(${unit.id})" style="font-size: 12px; padding: 6px 12px;">
+                            <i class="fas fa-trash"></i> Видалити
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    // Оновлюємо скриті поля
+    updateUnitsData();
+}
+
+// Оновлення скритих полів для відправки на сервер
+function updateUnitsData() {
+    const container = document.getElementById('unitsData');
+    container.innerHTML = units.map((unit, index) => `
+        <input type="hidden" name="units[${index}][unit_type]" value="${unit.unit_type}">
+        <input type="hidden" name="units[${index}][size_from]" value="${unit.size_from}">
+        <input type="hidden" name="units[${index}][size_to]" value="${unit.size_to || ''}">
+        <input type="hidden" name="units[${index}][price_per_unit]" value="${unit.price_per_unit}">
+    `).join('');
+}
+
+// Перевірка кількості документів
+function validateDocuments() {
+    const input = document.getElementById('documentInput');
+    const preview = document.getElementById('documentPreview');
+    
+    if (input.files.length > 5) {
+        alert('Максимум 5 документів!');
+        input.value = '';
+        preview.innerHTML = '';
+        return;
+    }
+    
+    // Показуємо список вибраних документів
+    if (input.files.length > 0) {
+        preview.innerHTML = '<div class="list-group">' +
+            Array.from(input.files).map(file => {
+                const ext = file.name.split('.').pop().toLowerCase();
+                let icon = 'fa-file-pdf text-danger';
+                if (ext === 'doc' || ext === 'docx') icon = 'fa-file-word text-primary';
+                
+                return `<div class="list-group-item doc-preview-item d-flex align-items-center" style="font-size: 13px; padding: 12px;">
+                    <i class="fas ${icon} me-2" style="font-size: 20px;"></i>
+                    <div class="flex-grow-1">
+                        <div style="font-weight: 500; color: #1f2937;">${file.name}</div>
+                        <small style="color: #9ca3af;">${(file.size / 1024).toFixed(1)} KB</small>
+                    </div>
+                </div>`;
+            }).join('') +
+            '</div>';
+    } else {
+        preview.innerHTML = '';
+    }
+}
+
+// Попередній перегляд фото
+document.getElementById('photoInput').addEventListener('change', function(e) {
+    const preview = document.getElementById('photoPreview');
+    preview.innerHTML = '';
+    
+    if (this.files.length > 0) {
+        Array.from(this.files).forEach(file => {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const div = document.createElement('div');
+                div.className = 'col-md-3 col-sm-6 mb-3';
+                div.innerHTML = `
+                    <div class="photo-preview-card">
+                        <img src="${e.target.result}" class="w-100" style="height: 180px; object-fit: cover;" alt="Фото">
+                        <div class="p-2" style="background: #fafafa;">
+                            <small style="font-size: 11px; color: #6b7280; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${file.name}</small>
+                        </div>
+                    </div>
+                `;
+                preview.appendChild(div);
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+});
+
+// Ініціалізація
+renderUnits();
+</script>
+{% endblock %}

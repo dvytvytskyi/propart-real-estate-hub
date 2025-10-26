@@ -30,6 +30,12 @@
                     </a>
                 </li>
                 <li class="sidebar-menu-item">
+                    <a href="{{ url_for('properties') }}" class="sidebar-menu-button {{ 'active' if active_page == 'properties' else '' }}">
+                        <i class="fas fa-home"></i>
+                        <span>Нерухомість</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-item">
                     <a href="{{ url_for('profile') }}" class="sidebar-menu-button {{ 'active' if active_page == 'profile' else '' }}">
                         <i class="fas fa-user-circle"></i>
                         <span>Профіль</span>

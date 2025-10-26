@@ -1,0 +1,587 @@
+{% extends "base.html" %}
+
+{% block title %}{{ property.name }} - Real Estate Agents Hub{% endblock %}
+
+{% block content %}
+<style>
+.property-wrapper {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Header */
+.property-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 0;
+    border-bottom: 1px solid #dee2e6;
+    margin-bottom: 30px;
+}
+
+.property-header h1 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 600;
+}
+
+/* Галерея фото - горизонтальний скрол */
+.photo-gallery {
+    margin-bottom: 40px;
+}
+
+.photo-gallery h3 {
+    font-size: 20px;
+    margin-bottom: 15px;
+}
+
+.photo-scroll {
+    display: flex;
+    gap: 15px;
+    overflow-x: auto;
+    padding-bottom: 10px;
+}
+
+.photo-scroll::-webkit-scrollbar {
+    height: 8px;
+}
+
+.photo-scroll::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.photo-scroll::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.photo-scroll::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+.photo-item {
+    flex-shrink: 0;
+    width: 300px;
+    height: 200px;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.photo-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.empty-photos {
+    text-align: center;
+    padding: 60px 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+/* Основна інформація */
+.main-info {
+    margin-bottom: 40px;
+}
+
+.main-info h3 {
+    font-size: 20px;
+    margin-bottom: 20px;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+}
+
+.info-box {
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.info-box-label {
+    font-size: 13px;
+    color: #6c757d;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.info-box-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: #212529;
+}
+
+/* Планування */
+.units-section {
+    margin-bottom: 40px;
+}
+
+.units-section h3 {
+    font-size: 20px;
+    margin-bottom: 15px;
+}
+
+.units-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 15px;
+}
+
+.unit-box {
+    padding: 20px;
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+}
+
+.unit-box h5 {
+    margin: 0 0 15px 0;
+    font-size: 16px;
+}
+
+.unit-box p {
+    margin: 5px 0;
+    font-size: 14px;
+    color: #6c757d;
+}
+
+.unit-box p strong {
+    color: #212529;
+}
+
+/* Документи */
+.documents-section {
+    margin-bottom: 40px;
+}
+
+.documents-section h3 {
+    font-size: 20px;
+    margin-bottom: 15px;
+}
+
+.document-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.document-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+}
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse">
+            {% set active_page = 'properties' %}
+            {% include 'components/sidebar.html' %}
+        </div>
+
+        <!-- Main content -->
+        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 py-4">
+            <div class="property-wrapper">
+                
+                <!-- Header -->
+                <div class="property-header">
+                    <h1>{{ property.name }}</h1>
+                    <div>
+                        <a href="{{ url_for('properties') }}" class="btn btn-outline-secondary me-2">
+                            <i class="fas fa-arrow-left"></i> Назад
+                        </a>
+                        {% if current_user.role == 'admin' %}
+                        <a href="{{ url_for('edit_property', property_id=property.id) }}" class="btn btn-primary me-2">
+                            <i class="fas fa-edit"></i> Редагувати
+                        </a>
+                        <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
+                            <i class="fas fa-trash"></i> Видалити
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- 1. Галерея фото зі скролом -->
+                <div class="photo-gallery">
+                    <h3><i class="fas fa-images me-2"></i>Фотогалерея</h3>
+                    {% if property.photos %}
+                    <div class="photo-scroll">
+                        {% for photo in property.photos %}
+                        <div class="photo-item">
+                            <img src="{{ photo.file_path }}" alt="Фото {{ loop.index }}">
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="empty-photos">
+                        <i class="fas fa-image fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">Фотографії відсутні</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- 2. Основна інформація -->
+                <div class="main-info">
+                    <h3><i class="fas fa-info-circle me-2"></i>Основна інформація</h3>
+                    <div class="info-grid">
+                        <div class="info-box">
+                            <div class="info-box-label">Локація</div>
+                            <div class="info-box-value">
+                                <i class="fas fa-map-marker-alt text-primary me-2"></i>
+                                {{ property.location_city }}, {{ property.location_country }}
+                            </div>
+                            {% if property.location_district %}
+                            <small class="text-muted">{{ property.location_district }}</small>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="info-box">
+                            <div class="info-box-label">Ціновий діапазон</div>
+                            <div class="info-box-value">
+                                {% if property.price_to %}
+                                    ${{ "{:,.0f}".format(property.price_from) }} - ${{ "{:,.0f}".format(property.price_to) }}
+                                {% else %}
+                                    від ${{ "{:,.0f}".format(property.price_from) }}
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if property.payment_type %}
+                        <div class="info-box">
+                            <div class="info-box-label">Умови оплати</div>
+                            <div class="info-box-value" style="font-size: 14px;">
+                                {{ property.payment_type }}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <div class="info-box">
+                            <div class="info-box-label">Створено</div>
+                            <div class="info-box-value" style="font-size: 16px;">
+                                {{ property.created_at.strftime('%d.%m.%Y') }}
+                            </div>
+                            <small class="text-muted">Автор: {{ property.creator.username }}</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Планування -->
+                <div class="units-section">
+                    <h3><i class="fas fa-th me-2"></i>Планування</h3>
+                    {% if property.units %}
+                    <div class="units-grid">
+                        {% for unit in property.units %}
+                        <div class="unit-box">
+                            <h5>
+                                {% if unit.unit_type == 'studio' %}
+                                    Studio
+                                {% else %}
+                                    {{ unit.unit_type }} кімнат{{ 'и' if unit.unit_type|int > 1 and unit.unit_type|int < 5 else '' }}
+                                {% endif %}
+                            </h5>
+                            <p><strong>Розмір:</strong> 
+                                {% if unit.size_to %}
+                                    {{ unit.size_from }} - {{ unit.size_to }} м²
+                                {% else %}
+                                    від {{ unit.size_from }} м²
+                                {% endif %}
+                            </p>
+                            <p><strong>Ціна:</strong> ${{ "{:,.0f}".format(unit.price_per_unit) }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="empty-photos">
+                        <i class="fas fa-home fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">Планування відсутні</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- 4. Документи -->
+                <div class="documents-section">
+                    <h3><i class="fas fa-file-pdf me-2"></i>Документи</h3>
+                    {% if property.documents %}
+                    <div class="document-list">
+                        {% for document in property.documents %}
+                        <div class="document-item">
+                            <div>
+                                <i class="fas fa-file-pdf text-danger me-2"></i>
+                                <strong>{{ document.filename }}</strong>
+                                {% if document.description %}
+                                <br><small class="text-muted">{{ document.description }}</small>
+                                {% endif %}
+                            </div>
+                            <a href="{{ document.file_path }}" class="btn btn-outline-primary btn-sm" target="_blank">
+                                <i class="fas fa-download"></i> Завантажити
+                            </a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="empty-photos">
+                        <i class="fas fa-file-alt fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">Документи відсутні</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+            </div>
+        </main>
+    </div>
+</div>
+
+<!-- Модальне вікно для видалення -->
+{% if current_user.role == 'admin' %}
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">Підтвердження видалення</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Ви впевнені, що хочете видалити нерухомість <strong>"{{ property.name }}"</strong>?</p>
+                <p class="text-danger"><small>Ця дія не може бути скасована. Будуть видалені всі фото, документи та планування.</small></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+                <form method="POST" action="{{ url_for('delete_property', property_id=property.id) }}" style="display: inline;">
+                    <button type="submit" class="btn btn-danger">Видалити</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальне вікно для додавання планування -->
+<div class="modal fade" id="addUnitModal" tabindex="-1" aria-labelledby="addUnitModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addUnitModalLabel">Додати планування</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="addUnitForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="unit_type" class="form-label">Тип планування</label>
+                        <select class="form-select" id="unit_type" name="unit_type" required>
+                            <option value="">Оберіть тип</option>
+                            <option value="studio">Studio</option>
+                            <option value="1">1 кімната</option>
+                            <option value="2">2 кімнати</option>
+                            <option value="3">3 кімнати</option>
+                            <option value="4">4 кімнати</option>
+                            <option value="5">5 кімнат</option>
+                            <option value="6">6 кімнат</option>
+                        </select>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="size_from" class="form-label">Розмір від (м²)</label>
+                            <input type="number" class="form-control" id="size_from" name="size_from" step="0.01" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="size_to" class="form-label">Розмір до (м²)</label>
+                            <input type="number" class="form-control" id="size_to" name="size_to" step="0.01">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="price_per_unit" class="form-label">Ціна за юніт (₴)</label>
+                        <input type="number" class="form-control" id="price_per_unit" name="price_per_unit" step="0.01" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">Додати</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Модальне вікно для завантаження фото -->
+<div class="modal fade" id="uploadPhotosModal" tabindex="-1" aria-labelledby="uploadPhotosModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="uploadPhotosModalLabel">Завантажити фото</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="uploadPhotosForm" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="photos" class="form-label">Виберіть фото</label>
+                        <input type="file" class="form-control" id="photos" name="photos" multiple accept="image/*">
+                        <div class="form-text">Можна вибрати кілька файлів одночасно. Підтримуються формати: JPG, PNG, GIF</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">Завантажити</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Модальне вікно для завантаження документів -->
+<div class="modal fade" id="uploadDocumentsModal" tabindex="-1" aria-labelledby="uploadDocumentsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="uploadDocumentsModalLabel">Завантажити документи</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="uploadDocumentsForm" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="documents" class="form-label">Виберіть документи</label>
+                        <input type="file" class="form-control" id="documents" name="documents" multiple accept=".pdf,.doc,.docx,.txt">
+                        <div class="form-text">Максимум 5 документів. Підтримуються формати: PDF, DOC, DOCX, TXT</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Опис документів (опціонально)</label>
+                        <textarea class="form-control" id="description" name="description" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">Завантажити</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if current_user.role == 'admin' %}
+<script>
+// Функція для отримання CSRF токена
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+}
+
+function deleteUnit(unitId) {
+    if (confirm('Ви впевнені, що хочете видалити це планування?')) {
+        fetch(`/properties/{{ property.id }}/units/${unitId}/delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Помилка: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Помилка при видаленні планування');
+        });
+    }
+}
+
+document.getElementById('addUnitForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const data = Object.fromEntries(formData);
+    
+    fetch(`/properties/{{ property.id }}/units/add`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Помилка: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Помилка при додаванні планування');
+    });
+});
+
+// Обробка завантаження фото
+document.getElementById('uploadPhotosForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    formData.append('csrf_token', getCsrfToken());
+    
+    fetch(`/properties/{{ property.id }}/upload-photos`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Помилка: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Помилка при завантаженні фото');
+    });
+});
+
+// Обробка завантаження документів
+document.getElementById('uploadDocumentsForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    formData.append('csrf_token', getCsrfToken());
+    
+    fetch(`/properties/{{ property.id }}/upload-documents`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Помилка: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Помилка при завантаженні документів');
+    });
+});
+</script>
+{% endif %}
+{% endblock %}

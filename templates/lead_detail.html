@@ -66,10 +66,21 @@
             </div>
             <div class="header-actions">
         {% if lead.hubspot_contact_id %}
-                <button class="btn-sync" onclick="syncLead({{ lead.id }})" title="Синхронізувати з HubSpot">
-                    <i class="fas fa-sync-alt"></i>
-                    <span>Синхронізувати</span>
-        </button>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div id="lastSyncInfo" style="font-size: 0.875rem; color: #64748b;">
+                        {% if lead.last_sync_at %}
+                            <i class="fas fa-clock" style="margin-right: 0.25rem;"></i>
+                            Оновлено: <span id="lastSyncTime">{{ lead.last_sync_at | ukraine_time('%d.%m.%Y %H:%M') }}</span>
+                        {% else %}
+                            <i class="fas fa-clock" style="margin-right: 0.25rem;"></i>
+                            Ніколи не синхронізувалось
+                        {% endif %}
+                    </div>
+                    <button class="btn-sync" onclick="syncLead({{ lead.id }})" title="Синхронізувати з HubSpot">
+                        <i class="fas fa-sync-alt"></i>
+                        <span>Оновити</span>
+                    </button>
+                </div>
         {% endif %}
         {% if lead.status != 'closed' and (current_user.role == 'admin' or lead.agent_id == current_user.id) %}
                 <button class="btn-close-deal" onclick="closeDeal({{ lead.id }})" title="Закрити угоду (+1000 поінтів)">
@@ -85,8 +96,8 @@
 </div>
 
         <div class="content-body">
-            <!-- Основна інформація -->
-            <div class="form-container">
+                    <!-- Основна інформація -->
+                    <div class="form-container">
                 <div class="form-header">
                     <div class="form-title">
                         <i class="fas fa-info-circle"></i>
@@ -145,6 +156,11 @@
                                 {% elif lead.status == 'closed' %}Закритий
                                 {% else %}{{ lead.status }}{% endif %}
                             </span>
+                            {% if lead.hubspot_stage_label %}
+                                <div style="font-size: 13px; color: #888; margin-top: 8px; padding: 5px 10px; background: #f5f5f5; border-radius: 4px; display: inline-block;">
+                                    <i class="fas fa-tag" style="font-size: 11px;"></i> <strong>HubSpot:</strong> {{ lead.hubspot_stage_label }}
+                                </div>
+                            {% endif %}
                         </div>
                         </div>
                         
@@ -335,86 +351,7 @@
                     </div>
                 </div>
             </div>
-            
-            <!-- Нотатки -->
-            {% if notes %}
-            <div class="form-container">
-                <div class="form-header">
-                    <div class="form-title">
-                        <i class="fas fa-sticky-note"></i>
-                        <h3>Нотатки</h3>
-        </div>
-    </div>
-    
-                <div class="form-content">
-                    <div class="notes-list">
-                        {% for note in notes %}
-                        <div class="note-item">
-                            <div class="note-header">
-                                <div class="note-date">
-                                    <i class="fas fa-clock"></i>
-                                    {{ note.created_at.strftime('%d %B %Y %H:%M') }}
-                                </div>
-                                <div class="note-author">
-                                    <i class="fas fa-user"></i>
-                                    {{ note.author or 'Система' }}
-                                </div>
-                            </div>
-                            <div class="note-content">
-                                {{ note.content | safe }}
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            
-            <!-- Activities -->
-            <div class="form-container">
-                <div class="form-header">
-                    <div class="form-title">
-                        <i class="fas fa-history"></i>
-                        <h3>Історія активностей</h3>
-                    </div>
-                </div>
-                
-                <div class="form-content">
-                <div class="timeline">
-                    <!-- Системні події -->
-                    <div class="timeline-item">
-                        <div class="timeline-marker bg-primary"></div>
-                        <div class="timeline-content">
-                            <h6 class="timeline-title">Лід створено</h6>
-                                <p class="timeline-text">{{ lead.created_at.strftime('%d %B %Y %H:%M') }}</p>
-                        </div>
-                    </div>
-                    
-                    {% if lead.last_updated_hubspot %}
-                    <div class="timeline-item">
-                        <div class="timeline-marker bg-success"></div>
-                        <div class="timeline-content">
-                            <h6 class="timeline-title">Останнє оновлення в HubSpot</h6>
-                                <p class="timeline-text">{{ lead.updated_at.strftime('%d %B %Y %H:%M') if lead.updated_at else 'Не вказано' }}</p>
-                        </div>
-                    </div>
-                    {% endif %}
-                    
-                        <!-- Activities з HubSpot -->
-                    {% if activities %}
-                        {% for activity in activities %}
-                        <div class="timeline-item">
-                                <div class="timeline-marker bg-info"></div>
-                                <div class="timeline-content">
-                                    <h6 class="timeline-title">{{ activity.type }} - {{ activity.title }}</h6>
-                                    <p class="timeline-text">{{ activity.created_at.strftime('%d %B %Y %H:%M') }}</p>
-                                </div>
-                            </div>
-                            {% endfor %}
-                                {% endif %}
-                    </div>
-                </div>
-            </div>
+        
         </div>
     </main>
 </div>
@@ -422,7 +359,18 @@
 
 {% block scripts %}
 <script>
+// Функція для отримання CSRF токена
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+}
+
 function syncLead(leadId) {
+    // Додаємо анімацію обертання до кнопки
+    const syncButton = event.target.closest('button');
+    const syncIcon = syncButton.querySelector('.fa-sync-alt');
+    syncIcon.classList.add('fa-spin');
+    syncButton.disabled = true;
+    
     if (typeof notificationSystem !== 'undefined') {
         notificationSystem.show('Синхронізація з HubSpot...', 'info', 3000);
     }
@@ -431,16 +379,30 @@ function syncLead(leadId) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
         }
     })
     .then(response => response.json())
     .then(data => {
+        syncIcon.classList.remove('fa-spin');
+        syncButton.disabled = false;
+        
         if (data.success) {
-            if (typeof notificationSystem !== 'undefined') {
-                notificationSystem.show(data.message, 'success', 5000);
-            } else {
-            alert(data.message);
+            // Оновлюємо час останньої синхронізації без перезавантаження
+            if (data.last_sync_at) {
+                const lastSyncTimeEl = document.getElementById('lastSyncTime');
+                if (lastSyncTimeEl) {
+                    lastSyncTimeEl.textContent = data.last_sync_at;
+                }
             }
+            
+            if (typeof notificationSystem !== 'undefined') {
+                notificationSystem.show(data.message + ' 🎉', 'success', 5000);
+            } else {
+                alert(data.message);
+            }
+            
+            // Перезавантажуємо сторінку через 2 секунди для оновлення всіх даних
             setTimeout(() => {
                 location.reload();
             }, 2000);
@@ -453,6 +415,9 @@ function syncLead(leadId) {
         }
     })
     .catch(error => {
+        syncIcon.classList.remove('fa-spin');
+        syncButton.disabled = false;
+        
         console.error('Error:', error);
         if (typeof notificationSystem !== 'undefined') {
             notificationSystem.show('Помилка при синхронізації', 'error', 5000);
@@ -471,6 +436,7 @@ function closeDeal(leadId) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
         }
     })
     .then(response => response.json())
@@ -501,5 +467,6 @@ function closeDeal(leadId) {
         }
     });
 }
+
 </script>
 {% endblock %}

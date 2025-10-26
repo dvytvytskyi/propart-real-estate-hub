@@ -153,41 +153,48 @@
                                 {% endif %}
                             </td>
                             <td class="col-status">
-                                {% if lead.status == 'new' %}
-                                    <span class="status-badge new">
-                                        <i class="fas fa-circle"></i>
-                                        <span>Новий</span>
-                                    </span>
-                                {% elif lead.status == 'contacted' %}
-                                    <span class="status-badge contacted">
-                                        <i class="fas fa-phone"></i>
-                                        <span>На зв'язку</span>
-                                    </span>
-                                {% elif lead.status == 'qualified' %}
-                                    <span class="status-badge qualified">
-                                        <i class="fas fa-check-circle"></i>
-                                        <span>Кваліфікований</span>
-                                    </span>
-                                {% elif lead.status == 'closed' %}
-                                    <span class="status-badge closed">
-                                        <i class="fas fa-handshake"></i>
-                                        <span>Закритий</span>
-                                    </span>
-                                {% else %}
-                                    <span class="status-badge default">
-                                        <i class="fas fa-question-circle"></i>
-                                        <span>{{ lead.status or 'Невідомо' }}</span>
-                                    </span>
-                                {% endif %}
+                                <div>
+                                    {% if lead.status == 'new' %}
+                                        <span class="status-badge new">
+                                            <i class="fas fa-circle"></i>
+                                            <span>Новий</span>
+                                        </span>
+                                    {% elif lead.status == 'contacted' %}
+                                        <span class="status-badge contacted">
+                                            <i class="fas fa-phone"></i>
+                                            <span>На зв'язку</span>
+                                        </span>
+                                    {% elif lead.status == 'qualified' %}
+                                        <span class="status-badge qualified">
+                                            <i class="fas fa-check-circle"></i>
+                                            <span>Кваліфікований</span>
+                                        </span>
+                                    {% elif lead.status == 'closed' %}
+                                        <span class="status-badge closed">
+                                            <i class="fas fa-handshake"></i>
+                                            <span>Закритий</span>
+                                        </span>
+                                    {% else %}
+                                        <span class="status-badge default">
+                                            <i class="fas fa-question-circle"></i>
+                                            <span>{{ lead.status or 'Невідомо' }}</span>
+                                        </span>
+                                    {% endif %}
+                                    {% if lead.hubspot_stage_label %}
+                                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                                            <i class="fas fa-tag" style="font-size: 9px;"></i> {{ lead.hubspot_stage_label }}
+                                        </div>
+                                    {% endif %}
+                                </div>
                             </td>
                             <td class="col-updated">
                                 <div class="date-cell">
                                     <i class="fas fa-calendar-alt"></i>
                                     <span>
                                         {% if lead.updated_at %}
-                                            {{ lead.updated_at.strftime('%d %B %Y %H:%M') }}
+                                            {{ lead.updated_at | ukraine_time }}
                                         {% elif lead.created_at %}
-                                            {{ lead.created_at.strftime('%d %B %Y %H:%M') }}
+                                            {{ lead.created_at | ukraine_time }}
                                         {% else %}
                                             Не вказано
                                         {% endif %}
@@ -273,12 +280,18 @@ function refreshTable() {
     location.reload();
 }
 
+// Функція для отримання CSRF токена
+function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+}
+
 // Sync functions
 function syncLead(leadId) {
     fetch(`/sync_lead/${leadId}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
         }
     })
     .then(response => response.json())
@@ -300,6 +313,7 @@ function syncAllLeads() {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
         }
     })
     .then(response => response.json())
@@ -328,6 +342,7 @@ function deleteLead(leadId) {
         method: 'DELETE',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
         }
     })
     .then(response => response.json())
@@ -371,6 +386,7 @@ setInterval(function() {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
         }
     })
     .then(response => response.json())

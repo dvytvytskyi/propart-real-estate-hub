@@ -39,6 +39,7 @@
                     {% endwith %}
                     
                     <form method="POST" class="lead-form" autocomplete="off">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                         <div class="form-grid">
                             <div class="form-group">
                                 <label for="deal_name" class="form-label">
@@ -47,7 +48,7 @@
                                 </label>
                                 <input type="text" class="form-input" id="deal_name" name="deal_name" 
                                        value="{{ form.deal_name.data or '' }}" required
-                                       placeholder="Введіть назву угоди" autocomplete="off">
+                                       placeholder="Введіть назву угоди" autocomplete="off" data-lpignore="true" data-form-type="other">
                                 {% if form.deal_name.errors %}
                                     <div class="form-error">
                                         {% for error in form.deal_name.errors %}
@@ -60,11 +61,11 @@
                             <div class="form-group">
                                 <label for="email" class="form-label">
                                     <i class="fas fa-envelope"></i>
-                                    <span>Email *</span>
+                                    <span>Email</span>
                                 </label>
                                 <input type="email" class="form-input" id="email" name="email" 
-                                       value="{{ form.email.data or '' }}" required
-                                       placeholder="example@email.com" autocomplete="off">
+                                       value="{{ form.email.data or '' }}"
+                                       placeholder="example@email.com" autocomplete="off" data-lpignore="true" data-form-type="other">
                                 {% if form.email.errors %}
                                     <div class="form-error">
                                         {% for error in form.email.errors %}
@@ -81,7 +82,7 @@
                                 </label>
                                 <input type="tel" class="form-input" id="phone" name="phone" 
                                        value="{{ form.phone.data or '+' }}" required
-                                       placeholder="+380 XX XXX XX XX" autocomplete="off">
+                                       placeholder="+380 XX XXX XX XX" autocomplete="off" data-lpignore="true" data-form-type="other">
                                 <div class="form-hint">Введіть номер у міжнародному форматі</div>
                                 
                                 <!-- Валідація телефону: результати пошуку -->
@@ -101,7 +102,7 @@
                                     <i class="fas fa-dollar-sign"></i>
                                     <span>Бюджет *</span>
                                 </label>
-                                <select class="form-select" id="budget" name="budget" required autocomplete="off">
+                                <select class="form-select" id="budget" name="budget" required>
                                     <option value="">Оберіть бюджет</option>
                                     <option value="до 200к" {% if form.budget.data == 'до 200к' %}selected{% endif %}>до 200к</option>
                                     <option value="200к–500к" {% if form.budget.data == '200к–500к' %}selected{% endif %}>200к–500к</option>
@@ -116,6 +117,57 @@
                                     </div>
                                 {% endif %}
                             </div>
+                            
+                            <div class="form-group">
+                                <label for="second_phone" class="form-label">
+                                    <i class="fas fa-phone-alt"></i>
+                                    <span>Другий номер телефону</span>
+                                </label>
+                                <input type="tel" class="form-input" id="second_phone" name="second_phone" 
+                                       value="{{ form.second_phone.data or '' }}"
+                                       placeholder="+380 XX XXX XX XX" autocomplete="off" data-lpignore="true" data-form-type="other">
+                                <div class="form-hint">Додатковий номер для зв'язку</div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="company" class="form-label">
+                                    <i class="fas fa-building"></i>
+                                    <span>Компанія</span>
+                                </label>
+                                <input type="text" class="form-input" id="company" name="company" 
+                                       value="{{ form.company.data or '' }}"
+                                       placeholder="Назва компанії" autocomplete="off" data-lpignore="true" data-form-type="other">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="telegram_nickname" class="form-label">
+                                    <i class="fab fa-telegram"></i>
+                                    <span>Telegram</span>
+                                </label>
+                                <input type="text" class="form-input" id="telegram_nickname" name="telegram_nickname" 
+                                       value="{{ form.telegram_nickname.data or '' }}"
+                                       placeholder="@username або номер телефону" autocomplete="off" data-lpignore="true" data-form-type="other">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="messenger" class="form-label">
+                                    <i class="fas fa-comments"></i>
+                                    <span>Messenger</span>
+                                </label>
+                                <input type="text" class="form-input" id="messenger" name="messenger" 
+                                       value="{{ form.messenger.data or '' }}"
+                                       placeholder="Нік або посилання" autocomplete="off" data-lpignore="true" data-form-type="other">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="birth_date" class="form-label">
+                                    <i class="fas fa-birthday-cake"></i>
+                                    <span>Дата народження</span>
+                                </label>
+                                <input type="date" class="form-input" id="birth_date" name="birth_date" 
+                                       value="{{ form.birth_date.data or '' }}" autocomplete="off" data-lpignore="true" data-form-type="other">
+                                <div class="form-hint">Для привітань та спеціальних пропозицій</div>
+                            </div>
                         </div>
                         
                         <div class="form-group full-width">
@@ -124,7 +176,7 @@
                                 <span>Примітки</span>
                             </label>
                             <textarea class="form-textarea" id="notes" name="notes" rows="4" 
-                                      placeholder="Додаткові відомості про лід..." autocomplete="off">{{ form.notes.data or '' }}</textarea>
+                                      placeholder="Додаткові відомості про лід..." autocomplete="off" data-lpignore="true" data-form-type="other">{{ form.notes.data or '' }}</textarea>
                             {% if form.notes.errors %}
                                 <div class="form-error">
                                     {% for error in form.notes.errors %}
@@ -211,6 +263,31 @@ let phoneCheckTimeout;
 let lastCheckedPhone = '';
 
 document.addEventListener('DOMContentLoaded', function() {
+    // === ПОВНЕ ВІДКЛЮЧЕННЯ АВТОКОМПЛІТУ ТА ОЧИЩЕННЯ ІСТОРІЇ ===
+    const form = document.querySelector('.lead-form');
+    if (form) {
+        // Відключаємо автокомпліт для форми
+        form.setAttribute('autocomplete', 'off');
+        
+        // Очищаємо всі поля при завантаженні сторінки (крім hidden полів)
+        const allInputs = form.querySelectorAll('input:not([type="hidden"]), select, textarea');
+        allInputs.forEach((input) => {
+            // Встановлюємо атрибути для відключення автокомпліту
+            input.setAttribute('autocomplete', 'off');
+            input.setAttribute('autocorrect', 'off');
+            input.setAttribute('autocapitalize', 'off');
+            input.setAttribute('spellcheck', 'false');
+            
+            // Для полів з типом text/email/tel - очищаємо при фокусі
+            if (input.type === 'text' || input.type === 'email' || input.type === 'tel' || input.tagName === 'TEXTAREA') {
+                // Запобігаємо автозаповненню при фокусі
+                input.addEventListener('focus', function() {
+                    this.setAttribute('autocomplete', 'new-' + Math.random().toString(36).substring(7));
+                });
+            }
+        });
+    }
+    
     // Форматування телефону
     const phoneInput = document.getElementById('phone');
     if (phoneInput) {
@@ -257,7 +334,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Валідація форми
-    const form = document.querySelector('.lead-form');
     if (form) {
         form.addEventListener('submit', function(e) {
             const dealName = document.getElementById('deal_name').value.trim();
@@ -379,10 +455,13 @@ function hidePhoneValidation() {
 function checkPhoneNumber(phone) {
     lastCheckedPhone = phone;
     
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    
     fetch('/api/check-phone', {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
         },
         body: JSON.stringify({ phone: phone })
     })
