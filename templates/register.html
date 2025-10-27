@@ -198,8 +198,8 @@
             <div class="d-flex align-items-start">
                 <i class="fas fa-info-circle me-2 mt-1"></i>
                 <p>
-                    <strong>Примітка:</strong> Всі нові користувачі реєструються як брокери/агенти. 
-                    Ви можете вибрати адміна (опціонально), якщо хочете працювати під певним менеджером.
+                    <strong>Примітка:</strong> При реєстрації ви повинні обрати адміна, під якого будете працювати. 
+                    Всі нові користувачі реєструються як брокери/агенти.
                 </p>
             </div>
         </div>
@@ -232,24 +232,31 @@
                 {% endif %}
             </div>
 
-            {% if admins %}
             <div class="mb-3">
                 <label for="admin_id" class="form-label">
                     <i class="fas fa-user-shield me-1"></i>
-                    Виберіть адміна (опціонально)
+                    Виберіть адміна
+                    <span style="color: #dc2626;">*</span>
                 </label>
-                <select class="form-control" id="admin_id" name="admin_id">
-                    <option value="">-- Не вибрано (працювати без адміна) --</option>
+                {% if admins %}
+                <select class="form-control" id="admin_id" name="admin_id" required>
+                    <option value="">-- Виберіть адміна --</option>
                     {% for admin in admins %}
                         <option value="{{ admin.id }}">{{ admin.username }} ({{ admin.email }})</option>
                     {% endfor %}
                 </select>
                 <small class="text-muted d-block mt-1">
                     <i class="fas fa-info-circle"></i>
-                    Можете вибрати адміна, якщо хочете працювати під ним
+                    Ви будете працювати під цим адміном
                 </small>
+                {% else %}
+                <div class="alert alert-warning" style="margin-top: 0.5rem;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Увага!</strong> В системі немає жодного адміна. 
+                    Зверніться до технічної підтримки для створення адміністратора.
+                </div>
+                {% endif %}
             </div>
-            {% endif %}
 
             <div class="mb-3">
                 <label for="password" class="form-label">Пароль</label>
