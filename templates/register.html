@@ -198,8 +198,8 @@
             <div class="d-flex align-items-start">
                 <i class="fas fa-info-circle me-2 mt-1"></i>
                 <p>
-                    <strong>Примітка:</strong> При реєстрації ви повинні вибрати адміна, під якого будете працювати. 
-                    Всі нові користувачі реєструються як брокери/агенти.
+                    <strong>Примітка:</strong> Всі нові користувачі реєструються як брокери/агенти. 
+                    Ви можете вибрати адміна (опціонально), якщо хочете працювати під певним менеджером.
                 </p>
             </div>
         </div>
@@ -232,23 +232,24 @@
                 {% endif %}
             </div>
 
+            {% if admins %}
             <div class="mb-3">
                 <label for="admin_id" class="form-label">
                     <i class="fas fa-user-shield me-1"></i>
-                    Виберіть адміна
-                    <span style="color: #dc2626;">*</span>
+                    Виберіть адміна (опціонально)
                 </label>
-                <select class="form-control" id="admin_id" name="admin_id" required>
-                    <option value="">-- Виберіть адміна --</option>
+                <select class="form-control" id="admin_id" name="admin_id">
+                    <option value="">-- Не вибрано (працювати без адміна) --</option>
                     {% for admin in admins %}
                         <option value="{{ admin.id }}">{{ admin.username }} ({{ admin.email }})</option>
                     {% endfor %}
                 </select>
                 <small class="text-muted d-block mt-1">
                     <i class="fas fa-info-circle"></i>
-                    Ви будете працювати під цим адміном
+                    Можете вибрати адміна, якщо хочете працювати під ним
                 </small>
             </div>
+            {% endif %}
 
             <div class="mb-3">
                 <label for="password" class="form-label">Пароль</label>

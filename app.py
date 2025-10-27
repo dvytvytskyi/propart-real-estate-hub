@@ -1664,31 +1664,33 @@ def register():
             return render_template('register.html', form=form)
         
         try:
-            # Перевірка: брокер повинен вибрати адміна
+            # Перевірка: брокер може вибрати адміна (опціонально)
             admin_id = request.form.get('admin_id')
-            if not admin_id:
-                flash('Будь ласка, виберіть адміна, під якого ви хочете зареєструватися')
-                return render_template('register.html', form=form, admins=User.query.filter_by(role='admin').all())
+            admin = None
             
-            # Перевіряємо, що вибраний адмін існує
-            admin = User.query.filter_by(id=admin_id, role='admin').first()
-            if not admin:
-                flash('Вибраний адмін не знайдений')
-                return render_template('register.html', form=form, admins=User.query.filter_by(role='admin').all())
+            if admin_id and admin_id != '':
+                # Перевіряємо, що вибраний адмін існує
+                admin = User.query.filter_by(id=admin_id, role='admin').first()
+                if not admin:
+                    flash('Вибраний адмін не знайдений')
+                    return render_template('register.html', form=form, admins=User.query.filter_by(role='admin').all())
             
             # Створюємо нового користувача (за замовчуванням - агент)
             new_user = User(
                 username=form.username.data,
                 email=form.email.data,
                 role='agent',  # За замовчуванням всі нові користувачі - агенти
-                admin_id=int(admin_id)  # Прив'язуємо до адміна
+                admin_id=int(admin_id) if admin_id and admin_id != '' else None  # Прив'язуємо до адміна (опціонально)
             )
             new_user.set_password(form.password.data)
             
             db.session.add(new_user)
             db.session.commit()
             
-            flash(f'Реєстрація успішна! Ви прив\'язані до адміна: {admin.username}. Тепер ви можете увійти в систему.')
+            if admin:
+                flash(f'Реєстрація успішна! Ви прив\'язані до адміна: {admin.username}. Тепер ви можете увійти в систему.')
+            else:
+                flash('Реєстрація успішна! Тепер ви можете увійти в систему.')
             return redirect(url_for('login'))
             
         except Exception as e:
@@ -1951,13 +1953,14 @@ def dashboard():
     
     # Оптимізований запит: отримуємо тільки необхідні ліди
     if current_user.role == 'admin':
-        # Адмін бачить тільки лідів своїх брокерів
+        # Адмін бачить лідів своїх брокерів
         broker_ids = [broker.id for broker in User.query.filter_by(admin_id=current_user.id, role='agent').all()]
         if broker_ids:
+            # Якщо є прив'язані брокери - показуємо тільки їх лідів
             leads_query = Lead.query.filter(Lead.agent_id.in_(broker_ids))
         else:
-            # Якщо у адміна немає брокерів - показуємо порожній список
-            leads_query = Lead.query.filter(Lead.id == -1)  # Завжди порожній результат
+            # Якщо немає прив'язаних брокерів - показуємо всіх лідів
+            leads_query = Lead.query
     else:
         leads_query = Lead.query.filter_by(agent_id=current_user.id)
     
@@ -1988,7 +1991,7 @@ def dashboard():
     # ⚡ ОПТИМІЗАЦІЯ: Використовуємо SQL агрегацію замість Python циклів
     # Базовий запит для метрик
     if current_user.role == 'admin':
-        # Метрики тільки для лідів брокерів адміна
+        # Метрики для лідів брокерів адміна (або всіх, якщо немає брокерів)
         if broker_ids:
             metrics_query = db.session.query(
                 func.count(Lead.id).label('total_leads'),
@@ -1997,13 +2000,13 @@ def dashboard():
                 func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
             ).filter(Lead.agent_id.in_(broker_ids))
         else:
-            # Якщо немає брокерів - нульові метрики
+            # Якщо немає брокерів - метрики для всіх лідів
             metrics_query = db.session.query(
                 func.count(Lead.id).label('total_leads'),
                 func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
                 func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
                 func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
-            ).filter(Lead.id == -1)
+            )
     else:
         metrics_query = db.session.query(
             func.count(Lead.id).label('total_leads'),
