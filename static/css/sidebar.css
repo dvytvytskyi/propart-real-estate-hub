@@ -712,6 +712,38 @@ body {
   text-align: left;
 }
 
+/* Ширина колонок таблиці лідів */
+.leads-table .col-deal {
+  min-width: 220px;
+  width: 25%;
+}
+
+.leads-table .col-agent {
+  min-width: 200px;
+  width: 20%;
+}
+
+.leads-table .col-budget {
+  min-width: 150px;
+  width: 15%;
+}
+
+.leads-table .col-status {
+  min-width: 180px;
+  width: 18%;
+}
+
+.leads-table .col-updated {
+  min-width: 180px;
+  width: 17%;
+}
+
+.leads-table .col-actions {
+  min-width: 180px;
+  width: auto;
+  white-space: nowrap;
+}
+
 /* Deal Name */
 .deal-name {
   color: var(--sidebar-primary);
