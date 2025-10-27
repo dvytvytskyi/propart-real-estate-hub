@@ -174,6 +174,10 @@
                                     <i class="fas fa-shield-alt"></i>
                                     <span>Роль</span>
                                 </th>
+                                <th class="col-agent">
+                                    <i class="fas fa-user-shield"></i>
+                                    <span>Адмін</span>
+                                </th>
                                 <th class="col-budget">
                                     <i class="fas fa-toggle-on"></i>
                                     <span>Статус</span>
@@ -224,6 +228,21 @@
                                         <span class="status-badge" style="background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd;">
                                             <i class="fas fa-user-tie"></i>
                                             <span>Агент</span>
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td class="col-agent">
+                                    {% if user.admin_id and user.admin %}
+                                        <div class="agent-cell">
+                                            <i class="fas fa-user-shield" style="color: var(--sidebar-primary);"></i>
+                                            <span>{{ user.admin.username }}</span>
+                                        </div>
+                                    {% elif user.role == 'admin' %}
+                                        <span style="color: var(--sidebar-text-muted); font-style: italic;">—</span>
+                                    {% else %}
+                                        <span style="color: #ef4444; font-weight: 500;">
+                                            <i class="fas fa-exclamation-triangle"></i>
+                                            Не призначено
                                         </span>
                                     {% endif %}
                                 </td>
