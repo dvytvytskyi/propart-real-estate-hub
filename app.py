@@ -516,7 +516,7 @@ class RegistrationForm(Form):
     email = StringField('Email', [validators.DataRequired(), validators.Email()])
     password = PasswordField('Пароль', [validators.DataRequired(), validators.Length(min=6)])
     confirm_password = PasswordField('Підтвердіть пароль', [validators.DataRequired()])
-    admin_id = SelectField('Адмін', coerce=int, validators=[validators.DataRequired(message='Будь ласка, виберіть адміна')])
+    admin_id = SelectField('Адмін', coerce=int)
     
     def validate_username(self, field):
         """Валідація імені користувача"""
@@ -1663,8 +1663,8 @@ def register():
     form = RegistrationForm(request.form)
     app.logger.info(f"   Form data: {request.form.to_dict()}")
     
-    # Заповнюємо choices для admin_id
-    form.admin_id.choices = [('', '-- Виберіть адміна --')] + [(admin.id, f"{admin.username} ({admin.email})") for admin in admins]
+    # Заповнюємо choices для admin_id (0 замість '' для coerce=int)
+    form.admin_id.choices = [(0, '-- Виберіть адміна --')] + [(admin.id, f"{admin.username} ({admin.email})") for admin in admins]
     app.logger.info(f"   Admin choices: {form.admin_id.choices}")
     
     if request.method == 'POST':
@@ -1710,6 +1710,12 @@ def register():
             return render_template('register.html', form=form, admins=admins)
         
         app.logger.info("✅ Паролі співпадають")
+        
+        # Перевіряємо, що вибрано адміна
+        if not form.admin_id.data or form.admin_id.data == 0:
+            app.logger.error("❌ Адміна не вибрано")
+            flash('Будь ласка, виберіть адміна')
+            return render_template('register.html', form=form, admins=admins)
         
         try:
             # Перевіряємо, що вибраний адмін існує

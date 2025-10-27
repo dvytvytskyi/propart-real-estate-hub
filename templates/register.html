@@ -240,7 +240,7 @@
                 </label>
                 {% if admins %}
                 <select class="form-control" id="admin_id" name="admin_id" required>
-                    <option value="">-- Виберіть адміна --</option>
+                    <option value="0">-- Виберіть адміна --</option>
                     {% for admin in admins %}
                         <option value="{{ admin.id }}">{{ admin.username }} ({{ admin.email }})</option>
                     {% endfor %}

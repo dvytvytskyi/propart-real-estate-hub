@@ -565,38 +565,24 @@
                 <div class="stats-inline" style="margin-bottom: 20px;">
                     <div class="stat-item">
                         <div class="stat-icon">
-                            <i class="fas fa-trophy"></i>
-            </div>
-                        <div class="stat-label">Поінти</div>
-                        <div class="stat-value">{{ current_user.points }}</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-icon">
-                            <i class="fas fa-medal"></i>
-                </div>
-                        <div class="stat-label">Рівень</div>
-                        <div class="stat-value stat-value-text">{{ current_user.get_level_display_name() }}</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-icon">
                             <i class="fas fa-users"></i>
-                </div>
+                        </div>
                         <div class="stat-label">Ліди</div>
                         <div class="stat-value">{{ current_user.total_leads }}</div>
                     </div>
                     <div class="stat-item">
                         <div class="stat-icon">
                             <i class="fas fa-handshake"></i>
-                </div>
+                        </div>
                         <div class="stat-label">Угоди</div>
                         <div class="stat-value">{{ current_user.closed_deals }}</div>
                     </div>
                     <div class="stat-item">
                         <div class="stat-icon">
                             <i class="fas fa-percentage"></i>
-                </div>
+                        </div>
                         <div class="stat-label">Комісія</div>
-                        <div class="stat-value">{{ current_user.get_commission_rate() }}%</div>
+                        <div class="stat-value">{{ current_user.commission or 0 }}%</div>
                     </div>
                 </div>
 
@@ -718,89 +704,6 @@
             </div>
             {% endif %}
 
-                <!-- Progress & Levels -->
-                {% if current_user.role == 'agent' %}
-                <div class="profile-section" style="margin-bottom: 20px;">
-                    <div class="section-header">
-                        <i class="fas fa-chart-line"></i>Прогрес
-        </div>
-
-                    {% set next_level_points = 2000 if current_user.level == 'bronze' else (5000 if current_user.level == 'silver' else (10000 if current_user.level == 'gold' else 10000)) %}
-                    {% set progress_percent = (current_user.points / next_level_points * 100) if current_user.level != 'platinum' else 100 %}
-                    
-                    <div class="progress-compact">
-                        <div class="progress-header">
-                            <span>{{ current_user.points }} / {{ next_level_points }} поінтів</span>
-                            <span>{{ "%.0f"|format(progress_percent) }}%</span>
-                        </div>
-                        <div class="progress-bar-bg">
-                            <div class="progress-bar-fill" style="width: {{ progress_percent }}%;"></div>
-                        </div>
-                    </div>
-
-                    <div class="level-badges">
-                        <div class="level-badge bronze {% if current_user.level == 'bronze' %}active{% endif %}">
-                            <i class="fas fa-medal"></i>
-                            <div class="level-name">Бронза</div>
-                            <div class="level-range">0-2K</div>
-                        </div>
-                        <div class="level-badge silver {% if current_user.level == 'silver' %}active{% endif %}">
-                            <i class="fas fa-medal"></i>
-                            <div class="level-name">Срібло</div>
-                            <div class="level-range">2K-5K</div>
-                        </div>
-                        <div class="level-badge gold {% if current_user.level == 'gold' %}active{% endif %}">
-                            <i class="fas fa-medal"></i>
-                            <div class="level-name">Золото</div>
-                            <div class="level-range">5K-10K</div>
-                        </div>
-                        <div class="level-badge platinum {% if current_user.level == 'platinum' %}active{% endif %}">
-                            <i class="fas fa-crown"></i>
-                            <div class="level-name">Платина</div>
-                            <div class="level-range">10K+</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Points & Benefits -->
-                <div class="two-column" style="margin-bottom: 20px;">
-                    <div class="profile-section">
-                        <div class="section-header">
-                            <i class="fas fa-lightbulb"></i>Як заробити
-                        </div>
-                        <div class="info-card">
-                            <div class="info-icon blue">
-                                <i class="fas fa-user-plus"></i>
-                            </div>
-                            <div class="info-details">
-                                <div class="info-title">Створення ліда</div>
-                                <div class="info-subtitle">За кожного нового ліда</div>
-                            </div>
-                            <div class="info-badge blue">+100</div>
-                        </div>
-                        <div class="info-card">
-                            <div class="info-icon green">
-                                <i class="fas fa-handshake"></i>
-                            </div>
-                            <div class="info-details">
-                                <div class="info-title">Закрита угода</div>
-                                <div class="info-subtitle">За успішну угоду</div>
-                            </div>
-                            <div class="info-badge green">+1000</div>
-                        </div>
-                    </div>
-
-                    <div class="profile-section">
-                        <div class="section-header">
-                            <i class="fas fa-gift"></i>Переваги
-                        </div>
-                        <div class="benefit-row bronze">🥉 Бронза • 5% комісія</div>
-                        <div class="benefit-row silver">🥈 Срібло • 7% комісія</div>
-                        <div class="benefit-row gold">🥇 Золото • 10% комісія</div>
-                        <div class="benefit-row platinum">👑 Платина • 15% комісія</div>
-                    </div>
-                </div>
-                {% endif %}
 
                 <!-- Documents -->
                 {% if current_user.role == 'agent' %}
