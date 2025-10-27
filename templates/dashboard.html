@@ -132,7 +132,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for lead in leads[:10] %}
+                        {% for lead in leads %}
                         <tr class="lead-row">
                             <td class="col-deal">
                                 <a href="{{ url_for('view_lead', lead_id=lead.id) }}" class="deal-name">
@@ -234,6 +234,110 @@
                     <span>Додати лід</span>
                 </a>
             </div>
+            {% endif %}
+            
+            <!-- Пагінація -->
+            {% if pagination and pagination.pages > 1 %}
+            <div class="pagination-container" style="margin-top: 2rem; display: flex; justify-content: center; align-items: center; gap: 0.5rem;">
+                {% if pagination.has_prev %}
+                    <a href="{{ url_for('dashboard', page=1, sort_by=sort_by, order=order) }}" 
+                       class="pagination-btn" title="Перша сторінка">
+                        <i class="fas fa-angle-double-left"></i>
+                    </a>
+                    <a href="{{ url_for('dashboard', page=pagination.prev_num, sort_by=sort_by, order=order) }}" 
+                       class="pagination-btn" title="Попередня">
+                        <i class="fas fa-angle-left"></i>
+                    </a>
+                {% else %}
+                    <span class="pagination-btn disabled"><i class="fas fa-angle-double-left"></i></span>
+                    <span class="pagination-btn disabled"><i class="fas fa-angle-left"></i></span>
+                {% endif %}
+                
+                <div class="pagination-pages" style="display: flex; gap: 0.25rem;">
+                    {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                        {% if page_num %}
+                            {% if page_num == pagination.page %}
+                                <span class="pagination-btn active">{{ page_num }}</span>
+                            {% else %}
+                                <a href="{{ url_for('dashboard', page=page_num, sort_by=sort_by, order=order) }}" 
+                                   class="pagination-btn">{{ page_num }}</a>
+                            {% endif %}
+                        {% else %}
+                            <span class="pagination-ellipsis">...</span>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+                
+                {% if pagination.has_next %}
+                    <a href="{{ url_for('dashboard', page=pagination.next_num, sort_by=sort_by, order=order) }}" 
+                       class="pagination-btn" title="Наступна">
+                        <i class="fas fa-angle-right"></i>
+                    </a>
+                    <a href="{{ url_for('dashboard', page=pagination.pages, sort_by=sort_by, order=order) }}" 
+                       class="pagination-btn" title="Остання сторінка">
+                        <i class="fas fa-angle-double-right"></i>
+                    </a>
+                {% else %}
+                    <span class="pagination-btn disabled"><i class="fas fa-angle-right"></i></span>
+                    <span class="pagination-btn disabled"><i class="fas fa-angle-double-right"></i></span>
+                {% endif %}
+                
+                <div style="margin-left: 1rem; color: #666; font-size: 14px;">
+                    Сторінка {{ pagination.page }} з {{ pagination.pages }} (Всього: {{ pagination.total }})
+                </div>
+            </div>
+            
+            <style>
+            .pagination-container {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            }
+            
+            .pagination-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 36px;
+                height: 36px;
+                padding: 0 12px;
+                border: 1px solid #ddd;
+                border-radius: 6px;
+                background: white;
+                color: #333;
+                text-decoration: none;
+                font-size: 14px;
+                font-weight: 500;
+                transition: all 0.2s;
+                cursor: pointer;
+            }
+            
+            .pagination-btn:hover:not(.disabled):not(.active) {
+                background: #f8f9fa;
+                border-color: #adb5bd;
+                color: #000;
+            }
+            
+            .pagination-btn.active {
+                background: #3b82f6;
+                border-color: #3b82f6;
+                color: white;
+                cursor: default;
+            }
+            
+            .pagination-btn.disabled {
+                background: #f8f9fa;
+                border-color: #e9ecef;
+                color: #adb5bd;
+                cursor: not-allowed;
+            }
+            
+            .pagination-ellipsis {
+                display: inline-flex;
+                align-items: center;
+                padding: 0 8px;
+                color: #666;
+                font-size: 14px;
+            }
+            </style>
             {% endif %}
         </div>
     </div>

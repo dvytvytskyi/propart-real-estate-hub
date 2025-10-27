@@ -1915,9 +1915,11 @@ def dashboard():
     # Імпортуємо необхідні функції для сортування
     from sqlalchemy import func, case
     
-    # Отримуємо параметри сортування з URL
+    # Отримуємо параметри сортування та пагінації з URL
     sort_by = request.args.get('sort_by', 'updated_at')  # За замовчуванням сортуємо по даті оновлення
     order = request.args.get('order', 'desc')  # За замовчуванням - від нових до старих
+    page = request.args.get('page', 1, type=int)  # Номер сторінки
+    per_page = 20  # Кількість лідів на сторінку
     
     # Оптимізований запит: отримуємо тільки необхідні ліди
     if current_user.role == 'admin':
@@ -1945,8 +1947,9 @@ def dashboard():
         else:
             leads_query = leads_query.order_by(Lead.updated_at.desc())
     
-    # Отримуємо ліди для відображення
-    leads = leads_query.all()
+    # Отримуємо ліди з пагінацією
+    pagination = leads_query.paginate(page=page, per_page=per_page, error_out=False)
+    leads = pagination.items
     
     # ⚡ ОПТИМІЗАЦІЯ: Використовуємо SQL агрегацію замість Python циклів
     # Базовий запит для метрик
@@ -1994,7 +1997,7 @@ def dashboard():
         'goal_percentage': goal_percentage
     }
     
-    return render_template('dashboard.html', leads=leads, metrics=metrics, sort_by=sort_by, order=order)
+    return render_template('dashboard.html', leads=leads, metrics=metrics, sort_by=sort_by, order=order, pagination=pagination)
 
 @app.route('/add_lead', methods=['GET', 'POST'])
 @login_required
