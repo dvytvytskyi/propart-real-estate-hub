@@ -516,6 +516,7 @@ class RegistrationForm(Form):
     email = StringField('Email', [validators.DataRequired(), validators.Email()])
     password = PasswordField('Пароль', [validators.DataRequired(), validators.Length(min=6)])
     confirm_password = PasswordField('Підтвердіть пароль', [validators.DataRequired()])
+    admin_id = SelectField('Адмін', coerce=int, validators=[validators.DataRequired(message='Будь ласка, виберіть адміна')])
     
     def validate_username(self, field):
         """Валідація імені користувача"""
@@ -1646,7 +1647,13 @@ def register():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
     
+    # Отримуємо список адмінів для вибору
+    admins = User.query.filter_by(role='admin').all()
+    
+    # Створюємо форму і заповнюємо choices для admin_id
     form = RegistrationForm(request.form)
+    form.admin_id.choices = [('', '-- Виберіть адміна --')] + [(admin.id, f"{admin.username} ({admin.email})") for admin in admins]
+    
     if request.method == 'POST' and form.validate():
         # Перевіряємо, чи існує користувач з таким ім'ям або email
         existing_user = User.query.filter(
@@ -1656,33 +1663,26 @@ def register():
         
         if existing_user:
             flash('Користувач з таким ім\'ям або email вже існує')
-            return render_template('register.html', form=form)
+            return render_template('register.html', form=form, admins=admins)
         
         # Перевіряємо, чи співпадають паролі
         if form.password.data != form.confirm_password.data:
             flash('Паролі не співпадають')
-            return render_template('register.html', form=form)
+            return render_template('register.html', form=form, admins=admins)
         
         try:
-            # Перевірка: брокер ПОВИНЕН вибрати адміна (обов'язково)
-            admin_id = request.form.get('admin_id')
-            
-            if not admin_id or admin_id == '':
-                flash('Будь ласка, виберіть адміна, під якого ви хочете зареєструватися')
-                return render_template('register.html', form=form, admins=User.query.filter_by(role='admin').all())
-            
             # Перевіряємо, що вибраний адмін існує
-            admin = User.query.filter_by(id=admin_id, role='admin').first()
+            admin = User.query.filter_by(id=form.admin_id.data, role='admin').first()
             if not admin:
                 flash('Вибраний адмін не знайдений')
-                return render_template('register.html', form=form, admins=User.query.filter_by(role='admin').all())
+                return render_template('register.html', form=form, admins=admins)
             
             # Створюємо нового користувача (за замовчуванням - агент)
             new_user = User(
                 username=form.username.data,
                 email=form.email.data,
                 role='agent',  # За замовчуванням всі нові користувачі - агенти
-                admin_id=int(admin_id)  # Прив'язуємо до адміна (ОБОВ'ЯЗКОВО)
+                admin_id=form.admin_id.data  # Прив'язуємо до адміна (ОБОВ'ЯЗКОВО)
             )
             new_user.set_password(form.password.data)
             
@@ -1696,8 +1696,6 @@ def register():
             db.session.rollback()
             flash(f'Помилка при реєстрації: {str(e)}')
     
-    # Отримуємо список адмінів для вибору
-    admins = User.query.filter_by(role='admin').all()
     return render_template('register.html', form=form, admins=admins)
 
 @app.route('/request_verification', methods=['POST'])
