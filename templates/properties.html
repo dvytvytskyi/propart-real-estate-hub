@@ -3,29 +3,32 @@
 {% block title %}Нерухомість - Real Estate Agents Hub{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <div class="row">
-        <!-- Sidebar -->
-        <div class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse">
-            {% set active_page = 'properties' %}
-            {% include 'components/sidebar.html' %}
-        </div>
+{% set active_page = 'properties' %}
+{% include 'components/sidebar.html' %}
 
-        <!-- Main content -->
-        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
-            <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-                <h1 class="h2">Нерухомість</h1>
-                {% if current_user.role == 'admin' %}
-                <div class="btn-toolbar mb-2 mb-md-0">
-                    <a href="{{ url_for('create_property') }}" class="btn btn-primary">
-                        <i class="fas fa-plus"></i> Додати нерухомість
-                    </a>
-                </div>
-                {% endif %}
+<div class="main-content" id="mainContent">
+    <div class="main-header">
+        <div style="display: flex; align-items: center;">
+            <button class="sidebar-toggle d-md-none me-3" onclick="toggleSidebar()">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <i class="fas fa-home" style="color: var(--sidebar-primary); font-size: 1.5rem;"></i>
+                <h1 class="mb-0">Нерухомість</h1>
             </div>
-
-            {% if properties %}
-            <div class="row">
+        </div>
+        {% if current_user.role == 'admin' %}
+        <div class="header-actions">
+            <a href="{{ url_for('create_property') }}" class="btn btn-primary btn-sm">
+                <i class="fas fa-plus me-1"></i> Додати нерухомість
+            </a>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="content-area">
+        {% if properties %}
+        <div class="row">
                 {% for property in properties %}
                 <div class="col-md-6 col-lg-4 mb-4">
                     <div class="card h-100">
@@ -72,21 +75,20 @@
                         </div>
                     </div>
                 </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <div class="text-center py-5">
-                <i class="fas fa-home fa-4x text-muted mb-3"></i>
-                <h3 class="text-muted">Немає нерухомості</h3>
-                <p class="text-muted">Поки що не додано жодної нерухомості.</p>
-                {% if current_user.role == 'admin' %}
-                <a href="{{ url_for('create_property') }}" class="btn btn-primary">
-                    <i class="fas fa-plus"></i> Додати першу нерухомість
-                </a>
-                {% endif %}
-            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="fas fa-home fa-4x text-muted mb-3"></i>
+            <h3 class="text-muted">Немає нерухомості</h3>
+            <p class="text-muted">Поки що не додано жодної нерухомості.</p>
+            {% if current_user.role == 'admin' %}
+            <a href="{{ url_for('create_property') }}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Додати першу нерухомість
+            </a>
             {% endif %}
-        </main>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
