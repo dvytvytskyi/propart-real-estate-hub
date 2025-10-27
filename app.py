@@ -1042,9 +1042,9 @@ def update_hubspot_dealstage(lead, new_status):
     try:
         # Зворотній маппінг: локальний статус → HubSpot dealstage ID
         reverse_stage_mapping = {
-            'new': '3206423796',        # Новая заявка
-            'contacted': '3204738257',  # Звонок успешный
-            'qualified': '3204738259',  # Отправлены варианты
+            'new': '3204738258',        # Новая заявка (оновлено)
+            'contacted': '3204738259',  # Контакт встановлено (оновлено)
+            'qualified': '3204738261',  # Кваліфіковано
             'closed': '3204738267'      # Сделка закрыта
         }
         
@@ -1209,47 +1209,31 @@ def sync_lead_from_hubspot(lead):
                 if deal.properties.get('dealstage'):
                     # Мапимо всі стадії HubSpot (dealstage ID) на наші статуси
                     stage_mapping = {
-                        # Нові заявки та необроблені
-                        '3206423796': 'new',        # Новая заявка
-                        '3204738255': 'new',        # Вовремя не обработан
+                        # Нові заявки (валідний ID)
+                        '3204738258': 'new',        # Новая заявка
                         
-                        # Контакт встановлено
-                        '3204738256': 'contacted',  # Недозвон
-                        '3204738257': 'contacted',  # Звонок успешный
-                        '3204738258': 'contacted',  # Запрос получен
+                        # Контакт встановлено (валідний ID)
+                        '3204738259': 'contacted',  # Контакт встановлено
                         
-                        # Кваліфіковані ліди (варіанти, зустрічі, тури, переговори)
-                        '3204738259': 'qualified',  # Отправлены варианты
-                        '3204738260': 'qualified',  # Передан на партнеров
-                        '3204738261': 'qualified',  # Назначена встреча
+                        # Кваліфіковані ліди (валідні ID)
+                        '3204738261': 'qualified',  # Кваліфіковано
                         '3204738262': 'qualified',  # Встреча проведена
-                        '3204738263': 'qualified',  # Тур назначен
-                        '3204738264': 'qualified',  # Тур проведен
                         '3204738265': 'qualified',  # Переговоры
                         '3204738266': 'qualified',  # Задаток
                         
-                        # Закриті угоди (успішно або невдало)
-                        '3204738267': 'closed',     # Сделка закрыта
-                        '3204738268': 'closed'      # Мусор
+                        # Закриті угоди (валідний ID)
+                        '3204738267': 'closed'      # Сделка закрыта
                     }
                     
-                    # Маппінг ID стадій на їх назви
+                    # Маппінг ID стадій на їх назви (тільки валідні ID)
                     stage_labels = {
-                        '3206423796': 'Новая заявка',
-                        '3204738255': 'Вовремя не обработан',
-                        '3204738256': 'Недозвон',
-                        '3204738257': 'Звонок успешный',
-                        '3204738258': 'Запрос получен',
-                        '3204738259': 'Отправлены варианты',
-                        '3204738260': 'Передан на партнеров',
+                        '3204738258': 'Новая заявка',
+                        '3204738259': 'Контакт встановлено',
                         '3204738261': 'Назначена встреча',
                         '3204738262': 'Встреча проведена',
-                        '3204738263': 'Тур назначен',
-                        '3204738264': 'Тур проведен',
                         '3204738265': 'Переговоры',
                         '3204738266': 'Задаток',
-                        '3204738267': 'Сделка закрыта',
-                        '3204738268': 'Мусор'
+                        '3204738267': 'Сделка закрыта'
                     }
                     
                     hubspot_stage = deal.properties['dealstage']
@@ -2248,7 +2232,7 @@ def add_lead():
                         "amount": get_budget_value(form.budget.data),
                         "dealtype": "newbusiness",
                         "pipeline": "2341107958",  # Pipeline ID для "Лиды"
-                        "dealstage": "3206423796",  # Стадія ID для "Новая заявка" в pipeline "Лиды"
+                        "dealstage": "3204738258",  # Стадія ID для "Новая заявка" (валідний ID)
                         "phone_number": formatted_phone,  # Додаємо номер телефону в угоду
                         "from_agent_portal__name_": current_user.username  # Ім'я агента, який створив лід
                     }
@@ -3150,21 +3134,13 @@ def get_hubspot_stages():
             'pipeline_stages': stages_info,
             'current_stages_usage': current_stages,
             'current_mapping': {
-                '3206423796': 'new (Новая заявка)',
-                '3204738255': 'new (Вовремя не обработан)',
-                '3204738256': 'contacted (Недозвон)',
-                '3204738257': 'contacted (Звонок успешный)',
-                '3204738258': 'contacted (Запрос получен)',
-                '3204738259': 'qualified (Отправлены варианты)',
-                '3204738260': 'qualified (Передан на партнеров)',
+                '3204738258': 'new (Новая заявка)',
+                '3204738259': 'contacted (Контакт встановлено)',
                 '3204738261': 'qualified (Назначена встреча)',
                 '3204738262': 'qualified (Встреча проведена)',
-                '3204738263': 'qualified (Тур назначен)',
-                '3204738264': 'qualified (Тур проведен)',
                 '3204738265': 'qualified (Переговоры)',
                 '3204738266': 'qualified (Задаток)',
-                '3204738267': 'closed (Сделка закрыта)',
-                '3204738268': 'closed (Мусор)'
+                '3204738267': 'closed (Сделка закрыта)'
             }
         })
         
@@ -3215,6 +3191,50 @@ def create_property():
             )
             
             db.session.add(property_obj)
+            db.session.flush()  # Отримуємо ID нерухомості
+            
+            # Обробка фотографій
+            photos = request.files.getlist('photos')
+            app.logger.info(f"📸 Завантаження фото: {len(photos)} файлів")
+            for photo in photos:
+                if photo and photo.filename:
+                    # Генеруємо унікальне ім'я файлу
+                    ext = photo.filename.rsplit('.', 1)[1].lower() if '.' in photo.filename else 'jpg'
+                    timestamp = int(time.time())
+                    filename = f"{property_obj.id}_{timestamp}_{photo.filename}"
+                    
+                    # Завантажуємо файл
+                    file_url = upload_file_to_s3(photo, filename)
+                    if file_url:
+                        property_photo = PropertyPhoto(
+                            property_id=property_obj.id,
+                            filename=filename,
+                            file_path=file_url
+                        )
+                        db.session.add(property_photo)
+                        app.logger.info(f"✅ Фото додано: {filename}")
+            
+            # Обробка документів
+            documents = request.files.getlist('documents')
+            app.logger.info(f"📄 Завантаження документів: {len(documents)} файлів")
+            for document in documents:
+                if document and document.filename:
+                    # Генеруємо унікальне ім'я файлу
+                    ext = document.filename.rsplit('.', 1)[1].lower() if '.' in document.filename else 'pdf'
+                    timestamp = int(time.time())
+                    filename = f"{property_obj.id}_{timestamp}_{document.filename}"
+                    
+                    # Завантажуємо файл
+                    file_url = upload_file_to_s3(document, filename)
+                    if file_url:
+                        property_doc = PropertyDocument(
+                            property_id=property_obj.id,
+                            filename=document.filename,
+                            file_path=file_url
+                        )
+                        db.session.add(property_doc)
+                        app.logger.info(f"✅ Документ додано: {filename}")
+            
             db.session.commit()
             
             flash('Нерухомість успішно створена!', 'success')
@@ -3223,6 +3243,8 @@ def create_property():
         except Exception as e:
             db.session.rollback()
             app.logger.error(f"Помилка створення нерухомості: {e}")
+            import traceback
+            app.logger.error(traceback.format_exc())
             flash('Помилка при створенні нерухомості.', 'error')
     
     return render_template('create_property.html', form=form)
@@ -3249,6 +3271,44 @@ def edit_property(property_id):
             property_obj.price_to = form.price_to.data if form.price_to.data else None
             property_obj.payment_type = form.payment_type.data
             
+            # Обробка НОВИХ фотографій
+            photos = request.files.getlist('photos')
+            app.logger.info(f"📸 Додавання нових фото: {len(photos)} файлів")
+            for photo in photos:
+                if photo and photo.filename:
+                    ext = photo.filename.rsplit('.', 1)[1].lower() if '.' in photo.filename else 'jpg'
+                    timestamp = int(time.time())
+                    filename = f"{property_obj.id}_{timestamp}_{photo.filename}"
+                    
+                    file_url = upload_file_to_s3(photo, filename)
+                    if file_url:
+                        property_photo = PropertyPhoto(
+                            property_id=property_obj.id,
+                            filename=filename,
+                            file_path=file_url
+                        )
+                        db.session.add(property_photo)
+                        app.logger.info(f"✅ Нове фото додано: {filename}")
+            
+            # Обробка НОВИХ документів
+            documents = request.files.getlist('documents')
+            app.logger.info(f"📄 Додавання нових документів: {len(documents)} файлів")
+            for document in documents:
+                if document and document.filename:
+                    ext = document.filename.rsplit('.', 1)[1].lower() if '.' in document.filename else 'pdf'
+                    timestamp = int(time.time())
+                    filename = f"{property_obj.id}_{timestamp}_{document.filename}"
+                    
+                    file_url = upload_file_to_s3(document, filename)
+                    if file_url:
+                        property_doc = PropertyDocument(
+                            property_id=property_obj.id,
+                            filename=document.filename,
+                            file_path=file_url
+                        )
+                        db.session.add(property_doc)
+                        app.logger.info(f"✅ Новий документ додано: {filename}")
+            
             db.session.commit()
             
             flash('Нерухомість успішно оновлена!', 'success')
@@ -3257,6 +3317,8 @@ def edit_property(property_id):
         except Exception as e:
             db.session.rollback()
             app.logger.error(f"Помилка оновлення нерухомості: {e}")
+            import traceback
+            app.logger.error(traceback.format_exc())
             flash('Помилка при оновленні нерухомості.', 'error')
     
     return render_template('edit_property.html', form=form, property=property_obj)

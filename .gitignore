@@ -103,3 +103,4 @@ tmp/
 temp/
 
 hubspot.config.yml
+.env.backup*
