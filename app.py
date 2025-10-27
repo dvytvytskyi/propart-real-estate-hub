@@ -341,6 +341,9 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(20), nullable=False, default='agent')  # 'agent' або 'admin'
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     
+    # Прив'язка брокера до адміна
+    admin_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # ID адміна для брокерів
+    
     # Комісія агента (у відсотках)
     commission = db.Column(db.Float, default=0.0)
     
@@ -362,6 +365,10 @@ class User(UserMixin, db.Model):
     last_login = db.Column(db.DateTime)
     login_attempts = db.Column(db.Integer, default=0)
     locked_until = db.Column(db.DateTime)
+    
+    # Relationships
+    # Брокери, які прив'язані до цього адміна
+    brokers = db.relationship('User', backref=db.backref('admin', remote_side=[id]), lazy='dynamic', foreign_keys=[admin_id])
     
     def set_password(self, password):
         """Встановлює пароль з використанням bcrypt"""
@@ -1487,7 +1494,13 @@ def profile():
     """Сторінка особистого кабінету"""
     # Отримуємо документи користувача
     documents = UserDocument.query.filter_by(user_id=current_user.id).order_by(UserDocument.uploaded_at.desc()).all()
-    return render_template('profile.html', documents=documents)
+    
+    # Для адміна отримуємо список його брокерів
+    brokers = []
+    if current_user.role == 'admin':
+        brokers = User.query.filter_by(admin_id=current_user.id, role='agent').order_by(User.created_at.desc()).all()
+    
+    return render_template('profile.html', documents=documents, brokers=brokers)
 
 @app.route('/profile/update', methods=['POST'])
 @login_required
@@ -1651,25 +1664,40 @@ def register():
             return render_template('register.html', form=form)
         
         try:
+            # Перевірка: брокер повинен вибрати адміна
+            admin_id = request.form.get('admin_id')
+            if not admin_id:
+                flash('Будь ласка, виберіть адміна, під якого ви хочете зареєструватися')
+                return render_template('register.html', form=form, admins=User.query.filter_by(role='admin').all())
+            
+            # Перевіряємо, що вибраний адмін існує
+            admin = User.query.filter_by(id=admin_id, role='admin').first()
+            if not admin:
+                flash('Вибраний адмін не знайдений')
+                return render_template('register.html', form=form, admins=User.query.filter_by(role='admin').all())
+            
             # Створюємо нового користувача (за замовчуванням - агент)
             new_user = User(
                 username=form.username.data,
                 email=form.email.data,
-                role='agent'  # За замовчуванням всі нові користувачі - агенти
+                role='agent',  # За замовчуванням всі нові користувачі - агенти
+                admin_id=int(admin_id)  # Прив'язуємо до адміна
             )
             new_user.set_password(form.password.data)
             
             db.session.add(new_user)
             db.session.commit()
             
-            flash('Реєстрація успішна! Тепер ви можете увійти в систему.')
+            flash(f'Реєстрація успішна! Ви прив\'язані до адміна: {admin.username}. Тепер ви можете увійти в систему.')
             return redirect(url_for('login'))
             
         except Exception as e:
             db.session.rollback()
             flash(f'Помилка при реєстрації: {str(e)}')
     
-    return render_template('register.html', form=form)
+    # Отримуємо список адмінів для вибору
+    admins = User.query.filter_by(role='admin').all()
+    return render_template('register.html', form=form, admins=admins)
 
 @app.route('/request_verification', methods=['POST'])
 @login_required
@@ -1923,7 +1951,13 @@ def dashboard():
     
     # Оптимізований запит: отримуємо тільки необхідні ліди
     if current_user.role == 'admin':
-        leads_query = Lead.query
+        # Адмін бачить тільки лідів своїх брокерів
+        broker_ids = [broker.id for broker in User.query.filter_by(admin_id=current_user.id, role='agent').all()]
+        if broker_ids:
+            leads_query = Lead.query.filter(Lead.agent_id.in_(broker_ids))
+        else:
+            # Якщо у адміна немає брокерів - показуємо порожній список
+            leads_query = Lead.query.filter(Lead.id == -1)  # Завжди порожній результат
     else:
         leads_query = Lead.query.filter_by(agent_id=current_user.id)
     
@@ -1954,12 +1988,22 @@ def dashboard():
     # ⚡ ОПТИМІЗАЦІЯ: Використовуємо SQL агрегацію замість Python циклів
     # Базовий запит для метрик
     if current_user.role == 'admin':
-        metrics_query = db.session.query(
-            func.count(Lead.id).label('total_leads'),
-            func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
-            func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
-            func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
-        )
+        # Метрики тільки для лідів брокерів адміна
+        if broker_ids:
+            metrics_query = db.session.query(
+                func.count(Lead.id).label('total_leads'),
+                func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
+                func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
+                func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
+            ).filter(Lead.agent_id.in_(broker_ids))
+        else:
+            # Якщо немає брокерів - нульові метрики
+            metrics_query = db.session.query(
+                func.count(Lead.id).label('total_leads'),
+                func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
+                func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
+                func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
+            ).filter(Lead.id == -1)
     else:
         metrics_query = db.session.query(
             func.count(Lead.id).label('total_leads'),

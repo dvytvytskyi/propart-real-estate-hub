@@ -530,10 +530,10 @@
     <div class="row">
         <!-- Sidebar -->
         <div class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse">
-            {% set active_page = 'profile' %}
-            {% include 'components/sidebar.html' %}
-        </div>
-
+{% set active_page = 'profile' %}
+{% include 'components/sidebar.html' %}
+    </div>
+    
         <!-- Main content -->
         <main class="col-md-9 ms-sm-auto col-lg-10 px-0">
             <div class="profile-wrapper">
@@ -542,19 +542,19 @@
                     <div class="profile-header">
                         <div class="profile-avatar">
                             <i class="fas fa-user"></i>
-                        </div>
+                    </div>
                         <div class="profile-info">
                             <h2 class="profile-name">{{ current_user.username }}</h2>
                             <div class="profile-meta">
                                 <span><i class="fas fa-envelope"></i>{{ current_user.email }}</span>
                                 <span><i class="fas fa-shield-alt"></i>{% if current_user.role == 'admin' %}Адмін{% else %}Агент{% endif %}</span>
-                                {% if current_user.is_verified %}
+                            {% if current_user.is_verified %}
                                 <span class="badge-verified">
                                     <i class="fas fa-check-circle"></i>Верифікований
-                                </span>
-                                {% endif %}
-                            </div>
+                            </span>
+                            {% endif %}
                         </div>
+                    </div>
                         <button class="btn-sm btn-outline" onclick="toggleEditMode()" id="editBtn">
                             <i class="fas fa-edit"></i>Редагувати
                         </button>
@@ -566,35 +566,35 @@
                     <div class="stat-item">
                         <div class="stat-icon">
                             <i class="fas fa-trophy"></i>
-                        </div>
+            </div>
                         <div class="stat-label">Поінти</div>
                         <div class="stat-value">{{ current_user.points }}</div>
                     </div>
                     <div class="stat-item">
                         <div class="stat-icon">
                             <i class="fas fa-medal"></i>
-                        </div>
+                </div>
                         <div class="stat-label">Рівень</div>
                         <div class="stat-value stat-value-text">{{ current_user.get_level_display_name() }}</div>
                     </div>
                     <div class="stat-item">
                         <div class="stat-icon">
                             <i class="fas fa-users"></i>
-                        </div>
+                </div>
                         <div class="stat-label">Ліди</div>
                         <div class="stat-value">{{ current_user.total_leads }}</div>
                     </div>
                     <div class="stat-item">
                         <div class="stat-icon">
                             <i class="fas fa-handshake"></i>
-                        </div>
+                </div>
                         <div class="stat-label">Угоди</div>
                         <div class="stat-value">{{ current_user.closed_deals }}</div>
                     </div>
                     <div class="stat-item">
                         <div class="stat-icon">
                             <i class="fas fa-percentage"></i>
-                        </div>
+                </div>
                         <div class="stat-label">Комісія</div>
                         <div class="stat-value">{{ current_user.get_commission_rate() }}%</div>
                     </div>
@@ -607,7 +607,7 @@
                         <div class="section-header">
                             <i class="fas fa-user-circle"></i>Інформація
                         </div>
-                        <form id="profileForm" onsubmit="saveProfile(event)">
+                    <form id="profileForm" onsubmit="saveProfile(event)">
                             <div class="info-row">
                                 <div class="info-label">
                                     <i class="fas fa-user"></i>Ім'я
@@ -647,8 +647,8 @@
                                 <button type="button" class="btn-sm btn-outline" onclick="toggleEditMode()">
                                     <i class="fas fa-times"></i>Скасувати
                                 </button>
-                            </div>
-                        </form>
+                        </div>
+                    </form>
                     </div>
 
                     <!-- Verification Status -->
@@ -656,14 +656,14 @@
                     <div class="profile-section">
                         <div class="section-header">
                             <i class="fas fa-shield-check"></i>Верифікація
-                        </div>
-                        {% if current_user.is_verified %}
+                </div>
+                    {% if current_user.is_verified %}
                             <div class="verification-compact verified">
                                 <i class="fas fa-check-circle"></i>
                                 <h5>Верифіковано</h5>
                                 <p>Акаунт підтверджено</p>
-                            </div>
-                        {% elif current_user.verification_requested %}
+                        </div>
+                    {% elif current_user.verification_requested %}
                             <div class="verification-compact pending">
                                 <i class="fas fa-clock"></i>
                                 <h5>На розгляді</h5>
@@ -672,8 +672,8 @@
                                         {{ current_user.verification_request_date | ukraine_time('%d.%m.%Y') }}
                                     {% endif %}
                                 </p>
-                            </div>
-                        {% else %}
+                        </div>
+                    {% else %}
                             <div class="verification-compact not-verified">
                                 <i class="fas fa-exclamation-triangle"></i>
                                 <h5>Не верифіковано</h5>
@@ -683,17 +683,48 @@
                                 </button>
                             </div>
                         {% endif %}
-                    </div>
+                        </div>
                     {% endif %}
                 </div>
+
+                <!-- Brokers List (for admin) -->
+                {% if current_user.role == 'admin' and brokers %}
+                <div class="profile-section" style="margin-bottom: 20px;">
+                    <div class="section-header">
+                        <i class="fas fa-users"></i>Мої брокери ({{ brokers|length }})
+                    </div>
+                    <div style="display: grid; gap: 10px;">
+                        {% for broker in brokers %}
+                        <div class="info-card">
+                            <div class="info-icon blue">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <div class="info-details" style="flex: 1;">
+                                <div class="info-title">{{ broker.username }}</div>
+                                <div class="info-subtitle">{{ broker.email }}</div>
+                            </div>
+                            <div style="text-align: right; font-size: 13px; color: #6b7280;">
+                                <div style="font-weight: 600; color: #3b82f6;">{{ broker.total_leads }} лідів</div>
+                                <div style="font-size: 11px; margin-top: 2px;">{{ broker.closed_deals }} угод</div>
+                            </div>
+                            {% if broker.is_verified %}
+                            <span class="badge-verified" style="margin-left: 8px;">
+                                <i class="fas fa-check-circle"></i>
+                            </span>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                </div>
+            </div>
+            {% endif %}
 
                 <!-- Progress & Levels -->
                 {% if current_user.role == 'agent' %}
                 <div class="profile-section" style="margin-bottom: 20px;">
                     <div class="section-header">
                         <i class="fas fa-chart-line"></i>Прогрес
-                    </div>
-                    
+        </div>
+
                     {% set next_level_points = 2000 if current_user.level == 'bronze' else (5000 if current_user.level == 'silver' else (10000 if current_user.level == 'gold' else 10000)) %}
                     {% set progress_percent = (current_user.points / next_level_points * 100) if current_user.level != 'platinum' else 100 %}
                     
@@ -777,9 +808,9 @@
                     <div class="section-header">
                         <i class="fas fa-file-alt"></i>Документи
                         <span style="margin-left: auto; font-size: 12px; color: #9ca3af; font-weight: 400;">{{ documents|length }} файлів</span>
-                    </div>
+            </div>
                     
-                    {% if documents %}
+                {% if documents %}
                         {% for doc in documents %}
                         <div class="document-row">
                             <div class="doc-icon">
@@ -806,17 +837,17 @@
                             </div>
                             <a href="/documents/{{ doc.id }}/download" class="btn-sm btn-outline">
                                 <i class="fas fa-download"></i>
-                            </a>
+                                </a>
                         </div>
                         {% endfor %}
-                    {% else %}
+                {% else %}
                         <div class="empty-state">
                             <i class="fas fa-folder-open"></i>
                             <p>Немає документів</p>
                         </div>
                     {% endif %}
-                </div>
-                {% endif %}
+        </div>
+        {% endif %}
             </div>
         </main>
     </div>
