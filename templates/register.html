@@ -297,9 +297,12 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+    console.log('🔍 Register page loaded');
+    
     // Обробка імені користувача
     document.getElementById('username').addEventListener('input', function() {
         let username = this.value;
+        console.log('📝 Username input:', username);
         
         // Замінюємо пробіли на підкреслення
         username = username.replace(/\s+/g, '_');
@@ -312,13 +315,17 @@
         
         // Оновлюємо значення поля
         this.value = username;
+        console.log('✅ Username after processing:', username);
         
         // Перевіряємо валідність
         if (username.length > 0 && username[0].match(/[0-9]/)) {
+            console.log('❌ Username starts with digit');
             this.setCustomValidity('Ім\'я користувача не може починатися з цифри');
         } else if (username.length > 0 && !username.match(/^[a-z0-9_]+$/)) {
+            console.log('❌ Username has invalid characters');
             this.setCustomValidity('Ім\'я користувача може містити тільки маленькі літери, цифри та підкреслення');
         } else {
+            console.log('✅ Username is valid');
             this.setCustomValidity('');
         }
     });
@@ -327,10 +334,13 @@
     document.getElementById('confirm_password').addEventListener('input', function() {
         const password = document.getElementById('password').value;
         const confirmPassword = this.value;
+        console.log('🔑 Password match check:', password === confirmPassword);
         
         if (password !== confirmPassword) {
+            console.log('❌ Passwords do not match');
             this.setCustomValidity('Паролі не співпадають');
         } else {
+            console.log('✅ Passwords match');
             this.setCustomValidity('');
         }
     });
@@ -340,6 +350,33 @@
         if (confirmPassword.value) {
             confirmPassword.dispatchEvent(new Event('input'));
         }
+    });
+    
+    // Логування відправки форми
+    document.querySelector('form').addEventListener('submit', function(e) {
+        console.log('📤 Form submit event');
+        const formData = new FormData(this);
+        console.log('📋 Form data:');
+        for (let [key, value] of formData.entries()) {
+            if (key.includes('password')) {
+                console.log(`   ${key}: ${'*'.repeat(value.length)}`);
+            } else {
+                console.log(`   ${key}: ${value}`);
+            }
+        }
+        
+        // Перевірка валідності форми
+        if (!this.checkValidity()) {
+            console.log('❌ Form is invalid, preventing submit');
+            e.preventDefault();
+            return false;
+        }
+        console.log('✅ Form is valid, submitting...');
+    });
+    
+    // Логування вибору адміна
+    document.getElementById('admin_id').addEventListener('change', function() {
+        console.log('👤 Admin selected:', this.value, this.options[this.selectedIndex].text);
     });
     </script>
 </body>

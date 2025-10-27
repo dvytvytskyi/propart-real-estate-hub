@@ -1644,40 +1644,86 @@ def profile_stats():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     """Реєстрація нового користувача"""
+    app.logger.info("=" * 80)
+    app.logger.info(f"🔍 REGISTER: Запит методом {request.method}")
+    
     if current_user.is_authenticated:
+        app.logger.info(f"👤 Користувач вже авторизований: {current_user.username}, перенаправлення на dashboard")
         return redirect(url_for('dashboard'))
     
     # Отримуємо список адмінів для вибору
+    app.logger.info("📋 Отримуємо список адмінів...")
     admins = User.query.filter_by(role='admin').all()
+    app.logger.info(f"✅ Знайдено адмінів: {len(admins)}")
+    for admin in admins:
+        app.logger.info(f"   - {admin.username} (ID: {admin.id}, email: {admin.email})")
     
     # Створюємо форму і заповнюємо choices для admin_id
+    app.logger.info("📝 Створюємо форму реєстрації...")
     form = RegistrationForm(request.form)
-    form.admin_id.choices = [('', '-- Виберіть адміна --')] + [(admin.id, f"{admin.username} ({admin.email})") for admin in admins]
+    app.logger.info(f"   Form data: {request.form.to_dict()}")
     
-    if request.method == 'POST' and form.validate():
+    # Заповнюємо choices для admin_id
+    form.admin_id.choices = [('', '-- Виберіть адміна --')] + [(admin.id, f"{admin.username} ({admin.email})") for admin in admins]
+    app.logger.info(f"   Admin choices: {form.admin_id.choices}")
+    
+    if request.method == 'POST':
+        app.logger.info("📥 POST запит - перевірка валідації форми...")
+        app.logger.info(f"   username: {form.username.data}")
+        app.logger.info(f"   email: {form.email.data}")
+        app.logger.info(f"   admin_id: {form.admin_id.data}")
+        app.logger.info(f"   password: {'*' * len(form.password.data) if form.password.data else 'None'}")
+        app.logger.info(f"   confirm_password: {'*' * len(form.confirm_password.data) if form.confirm_password.data else 'None'}")
+        
+        # Перевіряємо валідацію
+        is_valid = form.validate()
+        app.logger.info(f"✅ Валідація форми: {'ПРОЙДЕНО' if is_valid else 'ПРОВАЛЕНО'}")
+        
+        if not is_valid:
+            app.logger.error(f"❌ Помилки валідації форми:")
+            for field, errors in form.errors.items():
+                for error in errors:
+                    app.logger.error(f"   {field}: {error}")
+                    flash(f'Помилка поля {field}: {error}', 'error')
+            return render_template('register.html', form=form, admins=admins)
+        
+        app.logger.info("✅ Форма валідна, починаємо обробку...")
+        
         # Перевіряємо, чи існує користувач з таким ім'ям або email
+        app.logger.info("🔍 Перевіряємо існування користувача...")
         existing_user = User.query.filter(
             (User.username == form.username.data) | 
             (User.email == form.email.data)
         ).first()
         
         if existing_user:
+            app.logger.warning(f"⚠️ Користувач з таким ім'ям або email вже існує: {existing_user.username}")
             flash('Користувач з таким ім\'ям або email вже існує')
             return render_template('register.html', form=form, admins=admins)
         
+        app.logger.info("✅ Користувач не існує, продовжуємо...")
+        
         # Перевіряємо, чи співпадають паролі
         if form.password.data != form.confirm_password.data:
+            app.logger.error("❌ Паролі не співпадають")
             flash('Паролі не співпадають')
             return render_template('register.html', form=form, admins=admins)
         
+        app.logger.info("✅ Паролі співпадають")
+        
         try:
             # Перевіряємо, що вибраний адмін існує
+            app.logger.info(f"🔍 Перевіряємо адміна з ID: {form.admin_id.data}")
             admin = User.query.filter_by(id=form.admin_id.data, role='admin').first()
             if not admin:
+                app.logger.error(f"❌ Адмін з ID {form.admin_id.data} не знайдений")
                 flash('Вибраний адмін не знайдений')
                 return render_template('register.html', form=form, admins=admins)
             
+            app.logger.info(f"✅ Адмін знайдено: {admin.username}")
+            
             # Створюємо нового користувача (за замовчуванням - агент)
+            app.logger.info("💾 Створюємо нового користувача...")
             new_user = User(
                 username=form.username.data,
                 email=form.email.data,
@@ -1685,17 +1731,29 @@ def register():
                 admin_id=form.admin_id.data  # Прив'язуємо до адміна (ОБОВ'ЯЗКОВО)
             )
             new_user.set_password(form.password.data)
+            app.logger.info(f"   Користувач створено: {new_user.username} (email: {new_user.email}, role: {new_user.role}, admin_id: {new_user.admin_id})")
             
+            app.logger.info("💾 Додаємо користувача до БД...")
             db.session.add(new_user)
             db.session.commit()
+            app.logger.info(f"✅ Користувач успішно збережено в БД! User ID: {new_user.id}")
             
             flash(f'Реєстрація успішна! Ви прив\'язані до адміна: {admin.username}. Тепер ви можете увійти в систему.')
+            app.logger.info(f"🎉 Реєстрація успішна! Користувач: {new_user.username}, Адмін: {admin.username}")
+            app.logger.info("🔄 Перенаправлення на login...")
+            app.logger.info("=" * 80)
             return redirect(url_for('login'))
             
         except Exception as e:
             db.session.rollback()
+            app.logger.error(f"❌ Помилка при реєстрації: {type(e).__name__}: {str(e)}")
+            app.logger.error(f"   Traceback: {traceback.format_exc()}")
             flash(f'Помилка при реєстрації: {str(e)}')
+            app.logger.info("=" * 80)
+            return render_template('register.html', form=form, admins=admins)
     
+    app.logger.info("📄 Повертаємо форму реєстрації (GET запит)")
+    app.logger.info("=" * 80)
     return render_template('register.html', form=form, admins=admins)
 
 @app.route('/request_verification', methods=['POST'])
