@@ -2014,13 +2014,11 @@ def dashboard():
     
     # Оптимізований запит: отримуємо тільки необхідні ліди
     if current_user.role == 'admin':
-        # Адмін бачить ТІЛЬКИ лідів своїх брокерів
+        # Адмін бачить свої власні ліди + ліди своїх брокерів
         broker_ids = [broker.id for broker in User.query.filter_by(admin_id=current_user.id, role='agent').all()]
-        if broker_ids:
-            leads_query = Lead.query.filter(Lead.agent_id.in_(broker_ids))
-        else:
-            # Якщо у адміна немає брокерів - порожній список
-            leads_query = Lead.query.filter(Lead.id == -1)
+        # Додаємо ID самого адміна до списку
+        all_agent_ids = broker_ids + [current_user.id]
+        leads_query = Lead.query.filter(Lead.agent_id.in_(all_agent_ids))
     else:
         leads_query = Lead.query.filter_by(agent_id=current_user.id)
     
