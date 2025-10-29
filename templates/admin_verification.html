@@ -178,10 +178,6 @@
                                     <i class="fas fa-shield-alt"></i>
                                     <span>Статус верифікації</span>
                                 </th>
-                                <th class="col-budget">
-                                    <i class="fas fa-medal"></i>
-                                    <span>Рівень</span>
-                                </th>
                                 <th class="col-updated">
                                     <i class="fas fa-chart-bar"></i>
                                     <span>Статистика</span>
@@ -219,19 +215,6 @@
                                             <span>Не верифікований</span>
                                         </span>
                                     {% endif %}
-                                </td>
-                                <td class="col-budget">
-                                    <span class="level-badge {{ agent.level }}">
-                                        {% if agent.level == 'bronze' %}
-                                            <i class="fas fa-medal"></i> Бронзовий
-                                        {% elif agent.level == 'silver' %}
-                                            <i class="fas fa-medal"></i> Срібний
-                                        {% elif agent.level == 'gold' %}
-                                            <i class="fas fa-medal"></i> Золотий
-                                        {% elif agent.level == 'platinum' %}
-                                            <i class="fas fa-crown"></i> Платиновий
-                                        {% endif %}
-                                    </span>
                                 </td>
                                 <td class="col-updated">
                                     <div style="font-size: 0.875rem; color: var(--sidebar-text-muted);">
