@@ -595,6 +595,7 @@ class Property(db.Model):
     location_district = db.Column(db.String(100))  # Район (опціонально)
     price_from = db.Column(db.Numeric(15, 2), nullable=False)  # Ціна від
     price_to = db.Column(db.Numeric(15, 2))  # Ціна до (опціонально)
+    description = db.Column(db.Text)  # Опис проекту
     payment_type = db.Column(db.Text)  # Тип платежу (розтермінування)
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # Хто створив
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
@@ -673,16 +674,22 @@ class PropertyForm(Form):
     name = StringField('Назва проекту', [validators.DataRequired(), validators.Length(min=2, max=200)])
     location_country = SelectField('Країна', [validators.DataRequired()], choices=[
         ('Україна', 'Україна'),
-        ('Польща', 'Польща'),
-        ('Німеччина', 'Німеччина'),
-        ('Чехія', 'Чехія'),
-        ('Словаччина', 'Словаччина'),
-        ('Інша', 'Інша')
+        ('Дубай', 'Дубай'),
+        ('Румунія', 'Румунія'),
+        ('Занзибар', 'Занзибар'),
+        ('Північний Кіпр', 'Північний Кіпр'),
+        ('Південний Кіпр', 'Південний Кіпр'),
+        ('Турція', 'Турція'),
+        ('Балі', 'Балі'),
+        ('Чорногорія', 'Чорногорія'),
+        ('Болгарія', 'Болгарія'),
+        ('Іспанія', 'Іспанія')
     ])
     location_city = StringField('Місто', [validators.DataRequired(), validators.Length(min=2, max=100)])
     location_district = StringField('Район (опціонально)', [validators.Length(max=100)])
     price_from = DecimalField('Ціна від', [validators.DataRequired(), validators.NumberRange(min=0)])
     price_to = DecimalField('Ціна до (опціонально)', [validators.NumberRange(min=0)])
+    description = TextAreaField('Опис проекту', [validators.Length(max=2000)], render_kw={'rows': 5})
     payment_type = TextAreaField('Тип платежу (розтермінування)', [validators.Length(max=1000)])
 
 
@@ -3403,6 +3410,7 @@ def create_property():
                 location_district=form.location_district.data,
                 price_from=form.price_from.data,
                 price_to=form.price_to.data if form.price_to.data else None,
+                description=form.description.data,
                 payment_type=form.payment_type.data,
                 created_by=current_user.id
             )
@@ -3482,6 +3490,7 @@ def edit_property(property_id):
         try:
             property_obj.name = form.name.data
             property_obj.location_country = form.location_country.data
+            property_obj.description = form.description.data
             property_obj.location_city = form.location_city.data
             property_obj.location_district = form.location_district.data
             property_obj.price_from = form.price_from.data

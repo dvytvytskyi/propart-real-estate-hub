@@ -354,23 +354,29 @@ textarea.form-control {
 }
 </style>
 
-<div class="container-fluid">
-    <div class="row">
-        <!-- Sidebar -->
-        <div class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse">
-            {% set active_page = 'properties' %}
-            {% include 'components/sidebar.html' %}
-        </div>
+{% set active_page = 'properties' %}
+{% include 'components/sidebar.html' %}
 
-        <!-- Main content -->
-        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 py-4">
-            <div class="property-form-wrapper">
-                <div class="page-header">
-                    <h1>Створити нерухомість</h1>
-                    <a href="{{ url_for('properties') }}" class="btn btn-outline-secondary">
-                        <i class="fas fa-arrow-left"></i> Назад
-                    </a>
-                </div>
+<div class="main-content" id="mainContent">
+    <div class="main-header">
+        <div style="display: flex; align-items: center;">
+            <button class="sidebar-toggle d-md-none me-3" onclick="toggleSidebar()">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <i class="fas fa-home" style="color: var(--sidebar-primary); font-size: 1.5rem;"></i>
+                <h1 class="mb-0">Створити нерухомість</h1>
+            </div>
+        </div>
+        <div class="header-actions">
+            <a href="{{ url_for('properties') }}" class="btn btn-secondary btn-sm">
+                <i class="fas fa-arrow-left me-1"></i> Назад
+            </a>
+        </div>
+    </div>
+    
+    <div class="content-area">
+        <div class="property-form-wrapper">
 
                 <form method="POST" enctype="multipart/form-data" id="createPropertyForm">
                     {{ form.hidden_tag() }}
@@ -449,6 +455,17 @@ textarea.form-control {
                             </div>
                         </div>
 
+                        <div class="mb-3">
+                            {{ form.description.label(class="form-label") }}
+                            {{ form.description(class="form-control" + (" is-invalid" if form.description.errors else ""), placeholder="Опишіть проект, його особливості та переваги...") }}
+                            <small class="form-text">Детальний опис проекту для клієнтів</small>
+                            {% if form.description.errors %}
+                                <div class="invalid-feedback">
+                                    {% for error in form.description.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+
                         <div class="mb-0">
                             {{ form.payment_type.label(class="form-label") }}
                             {{ form.payment_type(class="form-control" + (" is-invalid" if form.payment_type.errors else ""), rows="2", placeholder="Наприклад: 30% при підписанні, 70% протягом 2 років") }}
@@ -518,8 +535,7 @@ textarea.form-control {
                     </div>
                 </form>
             </div>
-        </main>
-    </div>
+        </div>
 </div>
 
 <!-- Скриті поля для планувань -->
