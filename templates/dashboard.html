@@ -490,7 +490,8 @@ function showAlert(type, message) {
     }, 5000);
 }
 
-// Автоматична синхронізація кожні 30 секунд
+// Автоматична синхронізація кожні 5 хвилин (300 секунд) - зменшено з 30 сек для зменшення навантаження на HubSpot API
+// HubSpot має ліміт 100 запитів на 10 секунд, тому часті синхронізації можуть призвести до rate limiting
 {% if current_user.role == 'admin' %}
 setInterval(function() {
     console.log('Автоматична синхронізація з HubSpot...');
@@ -514,7 +515,7 @@ setInterval(function() {
     .catch(error => {
         console.error('❌ Помилка при синхронізації:', error);
     });
-}, 30000); // 30 секунд
+}, 300000); // 5 хвилин (300000 мс) - оптимізовано для HubSpot rate limits
 {% endif %}
 </script>
 {% endblock %}
