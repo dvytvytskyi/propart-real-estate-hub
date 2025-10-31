@@ -683,7 +683,8 @@ class PropertyForm(Form):
         ('Балі', 'Балі'),
         ('Чорногорія', 'Чорногорія'),
         ('Болгарія', 'Болгарія'),
-        ('Іспанія', 'Іспанія')
+        ('Іспанія', 'Іспанія'),
+        ('Інше', 'Інше')
     ])
     location_city = StringField('Місто', [validators.DataRequired(), validators.Length(min=2, max=100)])
     location_district = StringField('Район (опціонально)', [validators.Length(max=100)])
