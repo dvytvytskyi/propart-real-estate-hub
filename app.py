@@ -2323,63 +2323,67 @@ def add_lead():
                             print(f"Email: {form.email.data}")
                             print(f"Phone: {formatted_phone}")
                             traceback.print_exc()
-                            # Якщо контакт вже існує, показуємо помилку
-                            if "Contact already exists" in str(create_error):
-                                return redirect(url_for('add_lead', flash=f'Контакт з email {form.email.data} вже існує в системі. Будь ласка, використайте інший email або зверніться до адміністратора.', type='error'))
-                            else:
-                                raise create_error
+                            # Логуємо помилку, але продовжуємо роботу (лід вже збережений в БД)
+                            app.logger.warning(f"⚠️ Помилка створення HubSpot контакту: {create_error}")
+                            # Не прокидаємо помилку далі - лід вже збережений локально
                     
-                    # Створюємо deal в HubSpot
-                    print(f"=== СТВОРЕННЯ УГОДИ В HUBSPOT ===")
-                    print(f"Створюємо угоду в HubSpot: {form.deal_name.data}")
-                    print(f"Контакт ID: {hubspot_contact_id}")
-                    from hubspot.crm.deals import SimplePublicObjectInput as DealInput
+                    # Створюємо deal в HubSpot (тільки якщо контакт створений)
+                    if hubspot_contact_id:
+                        print(f"=== СТВОРЕННЯ УГОДИ В HUBSPOT ===")
+                        print(f"Створюємо угоду в HubSpot: {form.deal_name.data}")
+                        print(f"Контакт ID: {hubspot_contact_id}")
+                        try:
+                            from hubspot.crm.deals import SimplePublicObjectInput as DealInput
+                            
+                            deal_properties = {
+                                "dealname": form.deal_name.data,
+                                "amount": get_budget_value(form.budget.data),
+                                "dealtype": "newbusiness",
+                                "pipeline": "2341107958",  # Pipeline ID для "Лиды"
+                                "dealstage": "3204738258",  # Стадія ID для "Новая заявка" (валідний ID)
+                                "phone_number": formatted_phone,  # Додаємо номер телефону в угоду
+                                "from_agent_portal__name_": current_user.username  # Ім'я агента, який створив лід
+                            }
+                            
+                            print(f"Властивості угоди: {deal_properties}")
+                            deal_input = DealInput(properties=deal_properties)
+                            print(f"Створюємо угоду з вхідними даними: {deal_input}")
+                            hubspot_deal = hubspot_client.crm.deals.basic_api.create(deal_input)
+                            hubspot_deal_id = str(hubspot_deal.id)
+                            print(f"HubSpot угода створено успішно: {hubspot_deal_id}")
+                            
+                            # Створюємо зв'язок між контактом та угодою
+                            print(f"=== СТВОРЕННЯ ЗВ'ЯЗКУ КОНТАКТ-УГОДА ===")
+                            try:
+                                hubspot_client.crm.associations.basic_api.create(
+                                    from_object_type="contacts",
+                                    from_object_id=hubspot_contact_id,
+                                    to_object_type="deals", 
+                                    to_object_id=hubspot_deal_id,
+                                    association_type="contact_to_deal"
+                                )
+                                print(f"Зв'язок між контактом {hubspot_contact_id} та угодою {hubspot_deal_id} створено")
+                            except Exception as assoc_error:
+                                print(f"=== ПОМИЛКА СТВОРЕННЯ ЗВ'ЯЗКУ ===")
+                                print(f"Помилка створення зв'язку: {assoc_error}")
+                                print(f"Тип помилки: {type(assoc_error).__name__}")
+                                app.logger.warning(f"⚠️ Помилка створення зв'язку HubSpot: {assoc_error}")
+                                # Не критична помилка - продовжуємо
+                        except Exception as deal_error:
+                            print(f"=== ПОМИЛКА СТВОРЕННЯ УГОДИ ===")
+                            print(f"Помилка створення угоди: {deal_error}")
+                            app.logger.warning(f"⚠️ Помилка створення HubSpot угоди: {deal_error}")
+                            # Не критична помилка - контакт вже створений, продовжуємо
+                    else:
+                        print("⚠️ HubSpot контакт не створений, пропускаємо створення угоди")
                     
-                    deal_properties = {
-                        "dealname": form.deal_name.data,
-                        "amount": get_budget_value(form.budget.data),
-                        "dealtype": "newbusiness",
-                        "pipeline": "2341107958",  # Pipeline ID для "Лиды"
-                        "dealstage": "3204738258",  # Стадія ID для "Новая заявка" (валідний ID)
-                        "phone_number": formatted_phone,  # Додаємо номер телефону в угоду
-                        "from_agent_portal__name_": current_user.username  # Ім'я агента, який створив лід
-                    }
-                    
-                    print(f"Властивості угоди: {deal_properties}")
-                    deal_input = DealInput(properties=deal_properties)
-                    print(f"Створюємо угоду з вхідними даними: {deal_input}")
-                    hubspot_deal = hubspot_client.crm.deals.basic_api.create(deal_input)
-                    hubspot_deal_id = str(hubspot_deal.id)
-                    print(f"HubSpot угода створено успішно: {hubspot_deal_id}")
-                    print(f"Повна відповідь: {hubspot_deal}")
-                    
-                    # Створюємо зв'язок між контактом та угодою
-                    print(f"=== СТВОРЕННЯ ЗВ'ЯЗКУ КОНТАКТ-УГОДА ===")
-                    try:
-                        from hubspot.crm.associations import SimplePublicObjectId
-                        
-                        # Зв'язуємо контакт з угодою
-                        contact_id = SimplePublicObjectId(id=hubspot_contact_id)
-                        deal_id = SimplePublicObjectId(id=hubspot_deal_id)
-                        
-                        hubspot_client.crm.associations.basic_api.create(
-                            from_object_type="contacts",
-                            from_object_id=hubspot_contact_id,
-                            to_object_type="deals", 
-                            to_object_id=hubspot_deal_id,
-                            association_type="contact_to_deal"
-                        )
-                        print(f"Зв'язок між контактом {hubspot_contact_id} та угодою {hubspot_deal_id} створено")
-                    except Exception as assoc_error:
-                        print(f"=== ПОМИЛКА СТВОРЕННЯ ЗВ'ЯЗКУ ===")
-                        print(f"Помилка створення зв'язку: {assoc_error}")
-                        print(f"Тип помилки: {type(assoc_error).__name__}")
-                        print(f"Contact ID: {hubspot_contact_id}")
-                        print(f"Deal ID: {hubspot_deal_id}")
-                    
-                    # Синхронізація успішна!
-                    hubspot_sync_success = True
-                    print(f"✅ HubSpot синхронізація успішна! Contact: {hubspot_contact_id}, Deal: {hubspot_deal_id}")
+                    # Визначаємо успішність синхронізації
+                    if hubspot_contact_id:
+                        hubspot_sync_success = True
+                        print(f"✅ HubSpot синхронізація успішна! Contact: {hubspot_contact_id}, Deal: {hubspot_deal_id if hubspot_deal_id else 'не створено'}")
+                    else:
+                        hubspot_sync_success = False
+                        print("⚠️ HubSpot синхронізація не виконана (контакт не створений)")
                     
                 except Exception as hubspot_error:
                     error_msg = str(hubspot_error)
@@ -2396,17 +2400,19 @@ def add_lead():
                     app.logger.error(f"HubSpot помилка при створенні ліда: {error_msg}")
                     app.logger.error(f"Деталі: email={form.email.data}, deal_name={form.deal_name.data}, phone={formatted_phone}")
                     
-                    # Якщо контакт вже існує, показуємо помилку
+                    # Логуємо помилку, але не блокуємо успішне створення ліда
+                    # Лід вже збережений в локальній БД, тому просто додаємо повідомлення
                     if "Contact already exists" in error_msg or "409" in error_msg:
-                        return redirect(url_for('add_lead', flash=f'Контакт з email {form.email.data} вже існує в системі. Будь ласка, використайте інший email або зверніться до адміністратора.', type='error'))
+                        flash(f'Лід додано локально. Контакт з email {form.email.data} вже існує в HubSpot.', 'warning')
                     elif "401" in error_msg or "Unauthorized" in error_msg:
-                        return redirect(url_for('add_lead', flash='Лід додано локально. Помилка авторизації HubSpot API (недійсний ключ).', type='warning'))
+                        flash('Лід додано локально. Помилка авторизації HubSpot API (недійсний ключ).', 'warning')
                     elif "403" in error_msg or "Forbidden" in error_msg:
-                        return redirect(url_for('add_lead', flash='Лід додано локально. Немає прав доступу до HubSpot API.', type='warning'))
+                        flash('Лід додано локально. Немає прав доступу до HubSpot API.', 'warning')
                     elif "429" in error_msg or "rate limit" in error_msg.lower():
-                        return redirect(url_for('add_lead', flash='Лід додано локально. Перевищено ліміт запитів до HubSpot API.', type='warning'))
+                        flash('Лід додано локально. Перевищено ліміт запитів до HubSpot API.', 'warning')
                     else:
-                        return redirect(url_for('add_lead', flash=f'Лід додано локально. Помилка HubSpot: {error_msg[:100]}...', type='warning'))
+                        flash(f'Лід додано локально. Помилка HubSpot: {error_msg[:100]}...', 'warning')
+                    # Продовжуємо виконання - лід вже збережений, просто без HubSpot синхронізації
             else:
                 print("HubSpot клієнт не налаштований")
             
@@ -3714,5 +3720,60 @@ if __name__ == '__main__':
     
     # Запускаємо фонову синхронізацію з HubSpot
     start_background_sync()
+
+# ===== ДІАГНОСТИЧНИЙ ЕНДПОІНТ =====
+@app.route('/api/diagnostic', methods=['GET'])
+@login_required
+def diagnostic():
+    """Діагностичний ендпоінт для перевірки конфігурації на продакшені"""
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Доступ тільки для адміністраторів'})
     
+    diagnostic_info = {
+        'success': True,
+        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'environment': {
+            'database': {
+                'type': 'PostgreSQL' if app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgresql') else 'SQLite',
+                'configured': bool(app.config.get('SQLALCHEMY_DATABASE_URI')),
+                'connection_test': None
+            },
+            'hubspot': {
+                'api_key_set': bool(HUBSPOT_API_KEY),
+                'client_configured': hubspot_client is not None,
+                'connection_test': None
+            },
+            's3': {
+                'access_key_set': bool(app.config.get('AWS_ACCESS_KEY_ID')),
+                'secret_key_set': bool(app.config.get('AWS_SECRET_ACCESS_KEY')),
+                'bucket_set': bool(app.config.get('AWS_S3_BUCKET')),
+                'region': app.config.get('AWS_REGION', 'not set'),
+                'client_configured': get_s3_client() is not None
+            },
+            'flask': {
+                'secret_key_set': bool(app.config.get('SECRET_KEY')),
+                'csrf_enabled': csrf._exempt_views == set() if hasattr(csrf, '_exempt_views') else True
+            }
+        }
+    }
+    
+    # Тест підключення до БД
+    try:
+        db.session.execute(db.text('SELECT 1'))
+        diagnostic_info['environment']['database']['connection_test'] = 'success'
+    except Exception as e:
+        diagnostic_info['environment']['database']['connection_test'] = f'error: {str(e)}'
+    
+    # Тест HubSpot підключення
+    if hubspot_client:
+        try:
+            hubspot_client.crm.contacts.basic_api.get_page(limit=1)
+            diagnostic_info['environment']['hubspot']['connection_test'] = 'success'
+        except Exception as e:
+            diagnostic_info['environment']['hubspot']['connection_test'] = f'error: {str(e)}'
+    else:
+        diagnostic_info['environment']['hubspot']['connection_test'] = 'client_not_configured'
+    
+    return jsonify(diagnostic_info)
+
     app.run(debug=True)
