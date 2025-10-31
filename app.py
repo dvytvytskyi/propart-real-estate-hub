@@ -1394,7 +1394,7 @@ def sync_lead_from_hubspot(lead):
                 if deal.properties.get('from_agent_portal__name_'):
                     print(f"👤 Агент з порталу: {deal.properties['from_agent_portal__name_']}")
                 
-                # Оновлюємо deal owner (власника угоди) - зберігаємо в окремому полі
+                # Оновлюємо deal owner (власника угоди) - завжди синхронізуємо з HubSpot
                 if deal.properties.get('hubspot_owner_id'):
                     try:
                         # Отримуємо інформацію про власника
@@ -1415,12 +1415,39 @@ def sync_lead_from_hubspot(lead):
                                 owner_name = owner.email
                             
                             if owner_name:
-                                # Зберігаємо HubSpot deal owner в notes
-                                if not lead.notes or "HubSpot Deal Owner:" not in lead.notes:
-                                    lead.notes = f"HubSpot Deal Owner: {owner_name}"
-                                print(f"HubSpot власник угоди: {owner_name}")
+                                # Завжди оновлюємо HubSpot Deal Owner в notes (навіть якщо вже є)
+                                import re
+                                owner_pattern = r'HubSpot Deal Owner:\s*[^\n]*'
+                                new_owner_text = f'HubSpot Deal Owner: {owner_name}'
+                                
+                                if lead.notes and re.search(owner_pattern, lead.notes):
+                                    # Замінюємо старе значення на нове
+                                    lead.notes = re.sub(owner_pattern, new_owner_text, lead.notes)
+                                else:
+                                    # Додаємо нове значення
+                                    if lead.notes:
+                                        lead.notes = (lead.notes.rstrip() + "\n" + new_owner_text).strip()
+                                    else:
+                                        lead.notes = new_owner_text
+                                
+                                print(f"✅ Оновлено HubSpot власника угоди: {owner_name}")
+                                app.logger.info(f"✅ Оновлено HubSpot власника угоди для ліда {lead.id}: {owner_name}")
+                                
+                                # Синхронізуємо agent_id на основі HubSpot owner email
+                                if owner.email:
+                                    # Шукаємо агента в системі по email
+                                    agent_by_email = User.query.filter_by(email=owner.email.lower()).first()
+                                    if agent_by_email and agent_by_email.id != lead.agent_id:
+                                        print(f"🔄 Зміна агента: {lead.agent_id} → {agent_by_email.id} ({owner.email})")
+                                        old_agent_id = lead.agent_id
+                                        lead.agent_id = agent_by_email.id
+                                        app.logger.info(f"🔄 Синхронізовано agent_id для ліда {lead.id}: {old_agent_id} → {agent_by_email.id} (з HubSpot)")
+                                    elif not agent_by_email:
+                                        print(f"⚠️ Агент з email {owner.email} не знайдено в системі")
+                                        app.logger.warning(f"⚠️ Агент з email {owner.email} (HubSpot owner) не знайдено в системі для ліда {lead.id}")
                     except Exception as e:
-                        print(f"Помилка отримання власника угоди: {e}")
+                        print(f"❌ Помилка отримання власника угоди: {e}")
+                        app.logger.error(f"❌ Помилка отримання HubSpot owner для ліда {lead.id}: {e}")
         
         # Синхронізуємо активності з HubSpot
         sync_activities_from_hubspot(lead)
