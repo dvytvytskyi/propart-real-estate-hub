@@ -3770,9 +3770,21 @@ def diagnostic():
             hubspot_client.crm.contacts.basic_api.get_page(limit=1)
             diagnostic_info['environment']['hubspot']['connection_test'] = 'success'
         except Exception as e:
-            diagnostic_info['environment']['hubspot']['connection_test'] = f'error: {str(e)}'
+            error_str = str(e)
+            diagnostic_info['environment']['hubspot']['connection_test'] = f'error: {error_str[:200]}'
+            # Додаємо інформацію про тип помилки
+            if '401' in error_str or 'Unauthorized' in error_str:
+                diagnostic_info['environment']['hubspot']['connection_test'] += ' (недійсний API ключ)'
+            elif '403' in error_str or 'Forbidden' in error_str:
+                diagnostic_info['environment']['hubspot']['connection_test'] += ' (немає прав доступу)'
+            elif '429' in error_str:
+                diagnostic_info['environment']['hubspot']['connection_test'] += ' (перевищено ліміт запитів)'
     else:
         diagnostic_info['environment']['hubspot']['connection_test'] = 'client_not_configured'
+        if not HUBSPOT_API_KEY:
+            diagnostic_info['environment']['hubspot']['connection_test'] += ' (HUBSPOT_API_KEY не встановлено)'
+        else:
+            diagnostic_info['environment']['hubspot']['connection_test'] += ' (помилка ініціалізації клієнта)'
     
     return jsonify(diagnostic_info)
 
