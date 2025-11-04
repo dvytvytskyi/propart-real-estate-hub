@@ -1592,181 +1592,181 @@ def fetch_all_deals_from_hubspot():
                         # Обробляємо кожен deal
                         for deal in deals_response.results:
                             try:
-                            # Використовуємо hs_object_id як deal_id
-                            deal_id = str(deal.properties.get('hs_object_id') or deal.id)
-                            deal_properties = deal.properties
-                            
-                            # Отримуємо phone_number прямо з deal properties
-                            phone = deal_properties.get('phone_number')
-                            
-                            if not phone:
-                                print(f"⚠️ Deal {deal_id} не має phone_number, пропускаємо")
-                                continue
-                            
-                            # Форматуємо телефон
-                            try:
-                                parsed_phone = phonenumbers.parse(phone, None)
-                                formatted_phone = phonenumbers.format_number(
-                                    parsed_phone, 
-                                    phonenumbers.PhoneNumberFormat.INTERNATIONAL
-                                )
-                            except:
-                                formatted_phone = phone
-                            
-                            # Отримуємо контакт, пов'язаний з deal (для email та імені)
-                            contact_id = None
-                            email = ''
-                            deal_name = deal_properties.get('dealname', '')
-                            
-                            try:
-                                # Отримуємо асоціації контакту з deal
-                                associations = hubspot_client.crm.deals.associations_api.get_all(
-                                    deal_id=deal_id,
-                                    to_object_type='contacts'
-                                )
-                                if associations.results:
-                                    contact_id = str(associations.results[0].id)
-                                    
-                                    # Отримуємо дані контакту для email та імені
-                                    try:
-                                        contact = hubspot_client.crm.contacts.basic_api.get_by_id(
-                                            contact_id=contact_id,
-                                            properties=['email', 'firstname', 'lastname']
-                                        )
-                                        if contact.properties:
-                                            email = contact.properties.get('email', '')
-                                            firstname = contact.properties.get('firstname', '')
-                                            lastname = contact.properties.get('lastname', '')
-                                            
-                                            # Якщо немає dealname, використовуємо ім'я з контакту
-                                            if not deal_name:
-                                                if firstname and lastname:
-                                                    deal_name = f"{firstname} {lastname}"
-                                                elif firstname:
-                                                    deal_name = firstname
-                                                elif lastname:
-                                                    deal_name = lastname
-                                    except Exception as contact_error:
-                                        print(f"⚠️ Помилка отримання контакту {contact_id}: {contact_error}")
-                            except Exception as assoc_error:
-                                print(f"⚠️ Помилка отримання асоціацій для deal {deal_id}: {assoc_error}")
-                            
-                            # Якщо немає email, використовуємо phone як унікальний ідентифікатор
-                            if not email:
-                                email = f"no-email-{deal_id}@hubspot.local"
-                            
-                            # Якщо немає deal_name, використовуємо phone
-                            if not deal_name:
-                                deal_name = f"Deal {deal_id}"
-                            
-                            # Визначаємо агента (за замовчуванням перший адмін або перший агент)
-                            default_agent = User.query.filter(
-                                (User.role == 'admin') | (User.role == 'agent')
-                            ).first()
-                            agent_id = default_agent.id if default_agent else None
-                            
-                            # Спробуємо знайти агента за email з HubSpot owner
-                            if deal_properties.get('hubspot_owner_id'):
+                                # Використовуємо hs_object_id як deal_id
+                                deal_id = str(deal.properties.get('hs_object_id') or deal.id)
+                                deal_properties = deal.properties
+                                
+                                # Отримуємо phone_number прямо з deal properties
+                                phone = deal_properties.get('phone_number')
+                                
+                                if not phone:
+                                    print(f"⚠️ Deal {deal_id} не має phone_number, пропускаємо")
+                                    continue
+                                
+                                # Форматуємо телефон
                                 try:
-                                    owner = hubspot_client.crm.owners.owners_api.get_by_id(
-                                        owner_id=deal_properties['hubspot_owner_id']
+                                    parsed_phone = phonenumbers.parse(phone, None)
+                                    formatted_phone = phonenumbers.format_number(
+                                        parsed_phone, 
+                                        phonenumbers.PhoneNumberFormat.INTERNATIONAL
                                     )
-                                    if owner and owner.email:
-                                        owner_user = User.query.filter_by(email=owner.email).first()
-                                        if owner_user:
-                                            agent_id = owner_user.id
-                                except Exception as owner_error:
-                                    print(f"⚠️ Помилка отримання owner: {owner_error}")
-                            
-                            if not agent_id:
-                                print(f"⚠️ Не знайдено агента для deal {deal_id}, пропускаємо")
-                                continue
-                            
-                            # Визначаємо статус з deal stage
-                            status = 'new'
-                            deal_stage = deal_properties.get('dealstage', '')
-                            if deal_stage:
-                                # Мапінг стадій HubSpot на статуси системи
-                                if 'closedwon' in deal_stage.lower() or 'closed won' in deal_stage.lower():
-                                    status = 'closed'
-                                elif 'qualified' in deal_stage.lower():
-                                    status = 'qualified'
-                                elif 'contacted' in deal_stage.lower():
-                                    status = 'contacted'
-                            
-                            # Визначаємо budget (з amount)
-                            budget = None
-                            if deal_properties.get('amount'):
-                                try:
-                                    amount = float(deal_properties['amount'])
-                                    if amount < 200000:
-                                        budget = 'до 200к'
-                                    elif amount < 500000:
-                                        budget = '200к–500к'
-                                    elif amount < 1000000:
-                                        budget = '500к–1млн'
-                                    else:
-                                        budget = '1млн+'
                                 except:
-                                    pass
-                            
-                            # Перевіряємо, чи існує лід з цим deal_id
-                            existing_lead = Lead.query.filter_by(hubspot_deal_id=deal_id).first()
-                            
-                            if existing_lead:
-                                # Оновлюємо існуючий лід
-                                existing_lead.deal_name = deal_name
-                                existing_lead.email = email
-                                existing_lead.phone = formatted_phone
-                                if budget:
-                                    existing_lead.budget = budget
-                                existing_lead.status = status
-                                if contact_id:
-                                    existing_lead.hubspot_contact_id = contact_id
-                                existing_lead.hubspot_deal_id = deal_id
-                                existing_lead.agent_id = agent_id
+                                    formatted_phone = phone
                                 
-                                updated_count += 1
-                                print(f"✅ Оновлено лід {existing_lead.id} з HubSpot deal {deal_id}")
-                            else:
-                                # Перевіряємо, чи не існує лід з таким телефоном
-                                duplicate_lead = Lead.query.filter(
-                                    Lead.phone == formatted_phone
-                                ).first()
+                                # Отримуємо контакт, пов'язаний з deal (для email та імені)
+                                contact_id = None
+                                email = ''
+                                deal_name = deal_properties.get('dealname', '')
                                 
-                                if duplicate_lead:
-                                    # Якщо знайдено дублікат, оновлюємо його
-                                    duplicate_lead.hubspot_deal_id = deal_id
-                                    if contact_id:
-                                        duplicate_lead.hubspot_contact_id = contact_id
-                                    duplicate_lead.agent_id = agent_id
-                                    if budget:
-                                        duplicate_lead.budget = budget
-                                    duplicate_lead.status = status
-                                    updated_count += 1
-                                    print(f"✅ Оновлено дублікат ліда {duplicate_lead.id} з HubSpot deal {deal_id}")
-                                else:
-                                    # Створюємо новий лід
-                                    new_lead = Lead(
-                                        agent_id=agent_id,
-                                        deal_name=deal_name,
-                                        email=email,
-                                        phone=formatted_phone,
-                                        budget=budget or 'до 200к',
-                                        status=status,
-                                        hubspot_contact_id=contact_id,
-                                        hubspot_deal_id=deal_id
+                                try:
+                                    # Отримуємо асоціації контакту з deal
+                                    associations = hubspot_client.crm.deals.associations_api.get_all(
+                                        deal_id=deal_id,
+                                        to_object_type='contacts'
                                     )
+                                    if associations.results:
+                                        contact_id = str(associations.results[0].id)
+                                        
+                                        # Отримуємо дані контакту для email та імені
+                                        try:
+                                            contact = hubspot_client.crm.contacts.basic_api.get_by_id(
+                                                contact_id=contact_id,
+                                                properties=['email', 'firstname', 'lastname']
+                                            )
+                                            if contact.properties:
+                                                email = contact.properties.get('email', '')
+                                                firstname = contact.properties.get('firstname', '')
+                                                lastname = contact.properties.get('lastname', '')
+                                                
+                                                # Якщо немає dealname, використовуємо ім'я з контакту
+                                                if not deal_name:
+                                                    if firstname and lastname:
+                                                        deal_name = f"{firstname} {lastname}"
+                                                    elif firstname:
+                                                        deal_name = firstname
+                                                    elif lastname:
+                                                        deal_name = lastname
+                                        except Exception as contact_error:
+                                            print(f"⚠️ Помилка отримання контакту {contact_id}: {contact_error}")
+                                except Exception as assoc_error:
+                                    print(f"⚠️ Помилка отримання асоціацій для deal {deal_id}: {assoc_error}")
+                                
+                                # Якщо немає email, використовуємо phone як унікальний ідентифікатор
+                                if not email:
+                                    email = f"no-email-{deal_id}@hubspot.local"
+                                
+                                # Якщо немає deal_name, використовуємо phone
+                                if not deal_name:
+                                    deal_name = f"Deal {deal_id}"
+                                
+                                # Визначаємо агента (за замовчуванням перший адмін або перший агент)
+                                default_agent = User.query.filter(
+                                    (User.role == 'admin') | (User.role == 'agent')
+                                ).first()
+                                agent_id = default_agent.id if default_agent else None
+                                
+                                # Спробуємо знайти агента за email з HubSpot owner
+                                if deal_properties.get('hubspot_owner_id'):
+                                    try:
+                                        owner = hubspot_client.crm.owners.owners_api.get_by_id(
+                                            owner_id=deal_properties['hubspot_owner_id']
+                                        )
+                                        if owner and owner.email:
+                                            owner_user = User.query.filter_by(email=owner.email).first()
+                                            if owner_user:
+                                                agent_id = owner_user.id
+                                    except Exception as owner_error:
+                                        print(f"⚠️ Помилка отримання owner: {owner_error}")
+                                
+                                if not agent_id:
+                                    print(f"⚠️ Не знайдено агента для deal {deal_id}, пропускаємо")
+                                    continue
+                                
+                                # Визначаємо статус з deal stage
+                                status = 'new'
+                                deal_stage = deal_properties.get('dealstage', '')
+                                if deal_stage:
+                                    # Мапінг стадій HubSpot на статуси системи
+                                    if 'closedwon' in deal_stage.lower() or 'closed won' in deal_stage.lower():
+                                        status = 'closed'
+                                    elif 'qualified' in deal_stage.lower():
+                                        status = 'qualified'
+                                    elif 'contacted' in deal_stage.lower():
+                                        status = 'contacted'
+                                
+                                # Визначаємо budget (з amount)
+                                budget = None
+                                if deal_properties.get('amount'):
+                                    try:
+                                        amount = float(deal_properties['amount'])
+                                        if amount < 200000:
+                                            budget = 'до 200к'
+                                        elif amount < 500000:
+                                            budget = '200к–500к'
+                                        elif amount < 1000000:
+                                            budget = '500к–1млн'
+                                        else:
+                                            budget = '1млн+'
+                                    except:
+                                        pass
+                                
+                                # Перевіряємо, чи існує лід з цим deal_id
+                                existing_lead = Lead.query.filter_by(hubspot_deal_id=deal_id).first()
+                                
+                                if existing_lead:
+                                    # Оновлюємо існуючий лід
+                                    existing_lead.deal_name = deal_name
+                                    existing_lead.email = email
+                                    existing_lead.phone = formatted_phone
+                                    if budget:
+                                        existing_lead.budget = budget
+                                    existing_lead.status = status
+                                    if contact_id:
+                                        existing_lead.hubspot_contact_id = contact_id
+                                    existing_lead.hubspot_deal_id = deal_id
+                                    existing_lead.agent_id = agent_id
                                     
-                                    db.session.add(new_lead)
-                                    created_count += 1
-                                    print(f"✅ Створено новий лід з HubSpot deal {deal_id} (phone: {formatted_phone})")
-                        
-                        except Exception as deal_error:
-                            print(f"❌ Помилка обробки deal {deal.id}: {deal_error}")
-                            app.logger.error(f"❌ Помилка обробки deal {deal.id}: {deal_error}")
-                            errors_count += 1
-                            traceback.print_exc()
+                                    updated_count += 1
+                                    print(f"✅ Оновлено лід {existing_lead.id} з HubSpot deal {deal_id}")
+                                else:
+                                    # Перевіряємо, чи не існує лід з таким телефоном
+                                    duplicate_lead = Lead.query.filter(
+                                        Lead.phone == formatted_phone
+                                    ).first()
+                                    
+                                    if duplicate_lead:
+                                        # Якщо знайдено дублікат, оновлюємо його
+                                        duplicate_lead.hubspot_deal_id = deal_id
+                                        if contact_id:
+                                            duplicate_lead.hubspot_contact_id = contact_id
+                                        duplicate_lead.agent_id = agent_id
+                                        if budget:
+                                            duplicate_lead.budget = budget
+                                        duplicate_lead.status = status
+                                        updated_count += 1
+                                        print(f"✅ Оновлено дублікат ліда {duplicate_lead.id} з HubSpot deal {deal_id}")
+                                    else:
+                                        # Створюємо новий лід
+                                        new_lead = Lead(
+                                            agent_id=agent_id,
+                                            deal_name=deal_name,
+                                            email=email,
+                                            phone=formatted_phone,
+                                            budget=budget or 'до 200к',
+                                            status=status,
+                                            hubspot_contact_id=contact_id,
+                                            hubspot_deal_id=deal_id
+                                        )
+                                        
+                                        db.session.add(new_lead)
+                                        created_count += 1
+                                        print(f"✅ Створено новий лід з HubSpot deal {deal_id} (phone: {formatted_phone})")
+                            
+                            except Exception as deal_error:
+                                print(f"❌ Помилка обробки deal {deal.id}: {deal_error}")
+                                app.logger.error(f"❌ Помилка обробки deal {deal.id}: {deal_error}")
+                                errors_count += 1
+                                traceback.print_exc()
                     
                         # Перевіряємо, чи є ще сторінки
                         if not deals_response.paging or not deals_response.paging.next:
