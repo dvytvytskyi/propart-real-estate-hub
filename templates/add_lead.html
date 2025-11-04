@@ -408,8 +408,17 @@ function checkPhoneDebounced(phone) {
     // Очищаємо попередній таймер
     clearTimeout(phoneCheckTimeout);
     
-    // Якщо номер закороткий - ховаємо валідацію
-    if (!phone || phone.length < 4) {
+    // Перевіряємо, чи є мінімум 4 цифри (не просто символів, а саме цифр)
+    if (!phone || phone.length < 2) {  // Мінімум "+" і одна цифра
+        hidePhoneValidation();
+        return;
+    }
+    
+    // Очищаємо номер від нецифрових символів для перевірки
+    const cleanDigits = phone.replace(/\D/g, '');
+    
+    // Якщо цифр менше 4 - ховаємо валідацію
+    if (cleanDigits.length < 4) {
         hidePhoneValidation();
         return;
     }
