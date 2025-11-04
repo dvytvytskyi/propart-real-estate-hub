@@ -1620,12 +1620,15 @@ def fetch_all_deals_from_hubspot():
                                 
                                 try:
                                     # Отримуємо асоціації контакту з deal
-                                    associations = hubspot_client.crm.deals.associations_api.get_all(
-                                        deal_id=deal_id,
+                                    # Використовуємо правильний API шлях (без v4)
+                                    associations = hubspot_client.crm.associations.basic_api.get_page(
+                                        from_object_type='deals',
+                                        from_object_id=deal_id,
                                         to_object_type='contacts'
                                     )
                                     if associations.results:
-                                        contact_id = str(associations.results[0].id)
+                                        # Отримуємо перший контакт з асоціацій
+                                        contact_id = str(associations.results[0].to_object_id)
                                         
                                         # Отримуємо дані контакту для email та імені
                                         try:
@@ -1649,7 +1652,9 @@ def fetch_all_deals_from_hubspot():
                                         except Exception as contact_error:
                                             print(f"⚠️ Помилка отримання контакту {contact_id}: {contact_error}")
                                 except Exception as assoc_error:
-                                    print(f"⚠️ Помилка отримання асоціацій для deal {deal_id}: {assoc_error}")
+                                    # Помилка з асоціаціями не критична - продовжуємо без контакту
+                                    app.logger.debug(f"⚠️ Помилка отримання асоціацій для deal {deal_id}: {assoc_error}")
+                                    # Не виводимо в консоль, щоб не засмічувати логи
                                 
                                 # Якщо немає email, використовуємо phone як унікальний ідентифікатор
                                 if not email:
