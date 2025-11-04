@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block title %}HubSpot Контакти - ProPart Real Estate Hub{% endblock %}
+
+{% block content %}
+{% set active_page = 'admin_hubspot_contacts' %}
+{% include 'components/sidebar.html' %}
+
+<div class="main-content" id="mainContent">
+    <div class="main-header">
+        <div style="display: flex; align-items: center;">
+            <button class="sidebar-toggle d-md-none me-3" onclick="toggleSidebar()">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <i class="fas fa-address-book" style="color: var(--sidebar-primary); font-size: 1.5rem;"></i>
+                <h1 class="mb-0">Номери телефонів з HubSpot CRM</h1>
+            </div>
+        </div>
+        <div class="header-actions">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary btn-sm">
+                <i class="fas fa-arrow-left me-1"></i> Назад
+            </a>
+        </div>
+    </div>
+    
+    <div class="content-area">
+        <div class="leads-table-container">
+            <div class="leads-table-header">
+                <div class="leads-table-title">
+                    <i class="fas fa-phone"></i>
+                    <h3>Всього контактів: {{ contacts|length }}</h3>
+                </div>
+            </div>
+            
+            {% if contacts %}
+            <div class="leads-table-wrapper">
+                <table class="leads-table">
+                    <thead>
+                        <tr>
+                            <th class="col-deal" style="width: 100px;">
+                                <i class="fas fa-id-card"></i>
+                                <span>ID</span>
+                            </th>
+                            <th class="col-deal">
+                                <i class="fas fa-user"></i>
+                                <span>Ім'я</span>
+                            </th>
+                            <th class="col-agent">
+                                <i class="fas fa-envelope"></i>
+                                <span>Email</span>
+                            </th>
+                            <th class="col-budget" style="width: 300px;">
+                                <i class="fas fa-phone"></i>
+                                <span>Номер телефону</span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for contact in contacts %}
+                        <tr class="lead-row">
+                            <td class="col-deal">
+                                <span style="font-family: monospace; font-size: 0.875rem;">{{ contact.id }}</span>
+                            </td>
+                            <td class="col-deal">
+                                <div class="agent-cell">
+                                    <i class="fas fa-user-circle"></i>
+                                    <span>{{ contact.name }}</span>
+                                </div>
+                            </td>
+                            <td class="col-agent">
+                                {{ contact.email or '—' }}
+                            </td>
+                            <td class="col-budget">
+                                <span style="font-family: monospace; white-space: nowrap;">{{ contact.phone }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <i class="fas fa-inbox" style="font-size: 3rem; color: #cbd5e1; margin-bottom: 1rem;"></i>
+                <p>Контакти не знайдено</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+.leads-table-container {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.leads-table-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+}
+
+.leads-table-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.leads-table-title i {
+    color: var(--sidebar-primary);
+    font-size: 1.25rem;
+}
+
+.leads-table-title h3 {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.leads-table-wrapper {
+    overflow-x: auto;
+}
+
+.leads-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.leads-table thead {
+    background: #f8fafc;
+}
+
+.leads-table th {
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.leads-table th i {
+    margin-right: 0.5rem;
+    color: var(--sidebar-primary);
+}
+
+.leads-table td {
+    padding: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    color: #1e293b;
+}
+
+.leads-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+.empty-state {
+    padding: 3rem;
+    text-align: center;
+    color: #64748b;
+}
+
+.empty-state p {
+    margin: 0;
+    font-size: 1rem;
+}
+</style>
+{% endblock %}
+

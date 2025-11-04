@@ -3131,6 +3131,106 @@ def sync_single_lead(lead_id):
     except Exception as e:
         return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
 
+@app.route('/admin/hubspot-contacts')
+@login_required
+def admin_hubspot_contacts():
+    """Сторінка з усіма номерами телефонів з HubSpot CRM"""
+    if current_user.role != 'admin':
+        flash('Доступ заборонено')
+        return redirect(url_for('dashboard'))
+    
+    if not hubspot_client:
+        flash('HubSpot API не налаштований', 'error')
+        return redirect(url_for('dashboard'))
+    
+    contacts_data = []
+    
+    try:
+        print("🔄 Завантаження всіх контактів з HubSpot...")
+        app.logger.info("🔄 Завантаження всіх контактів з HubSpot...")
+        
+        # Отримуємо всі контакти з HubSpot (посторінково)
+        after = None
+        page = 0
+        max_pages = 100  # Обмежуємо кількість сторінок для безпеки
+        
+        while page < max_pages:
+            try:
+                # Властивості, які потрібні для контактів
+                properties = [
+                    'phone', 'phone_number', 'mobilephone', 'hs_phone_number',
+                    'phone_number_1', 'email', 'firstname', 'lastname'
+                ]
+                
+                # Отримуємо сторінку контактів
+                if after:
+                    contacts_response = hubspot_client.crm.contacts.basic_api.get_page(
+                        limit=100,
+                        after=after,
+                        properties=properties
+                    )
+                else:
+                    contacts_response = hubspot_client.crm.contacts.basic_api.get_page(
+                        limit=100,
+                        properties=properties
+                    )
+                
+                if not contacts_response.results:
+                    break
+                
+                print(f"📄 Сторінка {page + 1}: отримано {len(contacts_response.results)} контактів")
+                
+                # Обробляємо кожен контакт
+                for contact in contacts_response.results:
+                    contact_id = str(contact.id)
+                    
+                    # Отримуємо всі номери телефонів з контакту
+                    phone_numbers = []
+                    
+                    # Перевіряємо всі можливі поля телефонів
+                    for phone_field in ['phone', 'phone_number', 'mobilephone', 'hs_phone_number', 'phone_number_1']:
+                        phone_value = contact.properties.get(phone_field)
+                        if phone_value:
+                            phone_numbers.append(phone_value)
+                    
+                    # Якщо є номери, додаємо контакт до списку
+                    if phone_numbers:
+                        # Об'єднуємо всі номери в один рядок
+                        phones_str = ', '.join(phone_numbers)
+                        
+                        contacts_data.append({
+                            'id': contact_id,
+                            'phone': phones_str,
+                            'email': contact.properties.get('email', ''),
+                            'name': f"{contact.properties.get('firstname', '')} {contact.properties.get('lastname', '')}".strip() or 'Без імені'
+                        })
+                
+                # Перевіряємо, чи є ще сторінки
+                if not contacts_response.paging or not contacts_response.paging.next:
+                    break
+                
+                after = contacts_response.paging.next.after
+                page += 1
+                
+                # Додаємо затримку між сторінками для rate limiting
+                time.sleep(0.5)
+                
+            except Exception as page_error:
+                print(f"❌ Помилка отримання сторінки {page + 1}: {page_error}")
+                app.logger.error(f"❌ Помилка отримання сторінки {page + 1}: {page_error}")
+                break
+        
+        print(f"✅ Завантажено {len(contacts_data)} контактів з номерами телефонів")
+        app.logger.info(f"✅ Завантажено {len(contacts_data)} контактів з номерами телефонів")
+        
+    except Exception as e:
+        print(f"❌ Критична помилка при завантаженні контактів з HubSpot: {e}")
+        app.logger.error(f"❌ Критична помилка при завантаженні контактів з HubSpot: {e}")
+        traceback.print_exc()
+        flash(f'Помилка завантаження контактів: {str(e)}', 'error')
+    
+    return render_template('admin_hubspot_contacts.html', contacts=contacts_data)
+
 @app.route('/admin/users')
 @login_required
 def admin_users():
@@ -3458,33 +3558,22 @@ def check_phone_number():
         
         app.logger.info(f"   Очищений номер: '{clean_phone}'")
         
-        # Нормалізуємо номер для пошуку - залишаємо тільки останні 7-9 цифр для кращого пошуку
-        # (це дозволяє знаходити номери навіть якщо код країни введено по-різному)
-        if len(clean_phone) >= 7:
-            # Беремо останні 7-9 цифр для пошуку (це більшість номерів мобільних)
-            search_phone = clean_phone[-9:] if len(clean_phone) >= 9 else clean_phone[-7:]
-        else:
-            search_phone = clean_phone
-        
-        app.logger.info(f"   Номер для пошуку: '{search_phone}'")
-        
         # Шукаємо ліди з схожими номерами (перевіряємо phone та second_phone)
         # Різна логіка для PostgreSQL та SQLite
         database_uri = app.config['SQLALCHEMY_DATABASE_URI']
         
         if database_uri.startswith('postgresql'):
             # PostgreSQL підтримує regexp_replace - перевіряємо обидва поля телефонів
-            # Шукаємо по останніх цифрах номера
             matching_leads = Lead.query.filter(
-                (func.regexp_replace(Lead.phone, '[^0-9]', '', 'g').like(f'%{search_phone}')) |
-                (func.regexp_replace(Lead.second_phone, '[^0-9]', '', 'g').like(f'%{search_phone}'))
+                (func.regexp_replace(Lead.phone, '[^0-9]', '', 'g').like(f'%{clean_phone}%')) |
+                (func.regexp_replace(Lead.second_phone, '[^0-9]', '', 'g').like(f'%{clean_phone}%'))
             ).limit(10).all()
         else:
             # Для SQLite використовуємо простий LIKE (номери вже відформатовані)
             # Шукаємо по частковому співпадінню в обох полях
             matching_leads = Lead.query.filter(
-                (Lead.phone.like(f'%{search_phone}')) |
-                (Lead.second_phone.like(f'%{search_phone}'))
+                (Lead.phone.like(f'%{clean_phone}%')) |
+                (Lead.second_phone.like(f'%{clean_phone}%'))
             ).limit(20).all()  # Більше ліміт, бо потім фільтруємо
             
             # Додаткова фільтрація в Python для SQLite
@@ -3492,9 +3581,7 @@ def check_phone_number():
             for lead in matching_leads:
                 lead_phone_clean = ''.join(filter(str.isdigit, lead.phone or ''))
                 lead_second_phone_clean = ''.join(filter(str.isdigit, lead.second_phone or ''))
-                # Перевіряємо, чи останні цифри співпадають
-                if (lead_phone_clean and lead_phone_clean.endswith(search_phone)) or \
-                   (lead_second_phone_clean and lead_second_phone_clean.endswith(search_phone)):
+                if clean_phone in lead_phone_clean or clean_phone in lead_second_phone_clean:
                     filtered_leads.append(lead)
             matching_leads = filtered_leads[:10]
         
