@@ -1777,6 +1777,215 @@ def fetch_all_deals_from_hubspot():
         db.session.rollback()
         return {'created': 0, 'updated': 0, 'errors': 1, 'total_processed': 0}
 
+def fetch_all_contacts_from_hubspot():
+    """Завантажує всі контакти з HubSpot CRM та створює/оновлює ліди в локальній БД"""
+    if not hubspot_client:
+        print("⚠️ HubSpot API не налаштований")
+        app.logger.warning("HubSpot API не налаштований для завантаження контактів")
+        return {'created': 0, 'updated': 0, 'errors': 0}
+    
+    try:
+        print("🔄 Початок завантаження всіх контактів з HubSpot CRM...")
+        app.logger.info("🔄 Початок завантаження всіх контактів з HubSpot CRM...")
+        
+        created_count = 0
+        updated_count = 0
+        errors_count = 0
+        
+        # Отримуємо всі контакти з HubSpot (посторінково)
+        after = None
+        page = 0
+        max_pages = 1000  # До 100,000 контактів
+        
+        while page < max_pages:
+            try:
+                # Властивості, які потрібні для контактів
+                properties = [
+                    'phone', 'phone_number', 'mobilephone', 'hs_phone_number',
+                    'phone_number_1', 'email', 'firstname', 'lastname',
+                    'company', 'telegram', 'telegram__cloned_', 'messenger',
+                    'messenger__cloned_', 'birthdate', 'birthdate__cloned_'
+                ]
+                
+                # Отримуємо сторінку контактів
+                if after:
+                    contacts_response = hubspot_client.crm.contacts.basic_api.get_page(
+                        limit=100,
+                        after=after,
+                        properties=properties
+                    )
+                else:
+                    contacts_response = hubspot_client.crm.contacts.basic_api.get_page(
+                        limit=100,
+                        properties=properties
+                    )
+                
+                if not contacts_response.results:
+                    break
+                
+                print(f"📄 Сторінка {page + 1}: отримано {len(contacts_response.results)} контактів")
+                app.logger.info(f"📄 Сторінка {page + 1}: отримано {len(contacts_response.results)} контактів")
+                
+                # Обробляємо кожен контакт
+                for contact in contacts_response.results:
+                    try:
+                        contact_id = str(contact.id)
+                        contact_properties = contact.properties
+                        
+                        # Визначаємо основний телефон
+                        phone = None
+                        if contact_properties.get('phone_number'):
+                            phone = contact_properties['phone_number']
+                        elif contact_properties.get('mobilephone'):
+                            phone = contact_properties['mobilephone']
+                        elif contact_properties.get('hs_phone_number'):
+                            phone = contact_properties['hs_phone_number']
+                        elif contact_properties.get('phone'):
+                            phone = contact_properties['phone']
+                        
+                        # Пропускаємо контакти без телефону
+                        if not phone:
+                            continue
+                        
+                        # Форматуємо телефон
+                        try:
+                            parsed_phone = phonenumbers.parse(phone, None)
+                            formatted_phone = phonenumbers.format_number(
+                                parsed_phone, 
+                                phonenumbers.PhoneNumberFormat.INTERNATIONAL
+                            )
+                        except:
+                            formatted_phone = phone
+                        
+                        # Визначаємо email
+                        email = contact_properties.get('email', '')
+                        if not email:
+                            # Якщо немає email, використовуємо phone як унікальний ідентифікатор
+                            email = f"no-email-{contact_id}@hubspot.local"
+                        
+                        # Визначаємо ім'я
+                        firstname = contact_properties.get('firstname', '')
+                        lastname = contact_properties.get('lastname', '')
+                        if firstname and lastname:
+                            deal_name = f"{firstname} {lastname}"
+                        elif firstname:
+                            deal_name = firstname
+                        elif lastname:
+                            deal_name = lastname
+                        else:
+                            deal_name = email.split('@')[0] if email else f"Contact {contact_id}"
+                        
+                        # Визначаємо агента (за замовчуванням перший адмін або перший агент)
+                        default_agent = User.query.filter(
+                            (User.role == 'admin') | (User.role == 'agent')
+                        ).first()
+                        agent_id = default_agent.id if default_agent else None
+                        
+                        # Перевіряємо, чи існує лід з цим contact_id
+                        existing_lead = Lead.query.filter_by(hubspot_contact_id=contact_id).first()
+                        
+                        if existing_lead:
+                            # Оновлюємо існуючий лід
+                            existing_lead.deal_name = deal_name
+                            existing_lead.email = email
+                            existing_lead.phone = formatted_phone
+                            existing_lead.hubspot_contact_id = contact_id
+                            if agent_id:
+                                existing_lead.agent_id = agent_id
+                            
+                            # Оновлюємо додаткові поля
+                            if contact_properties.get('phone_number_1'):
+                                existing_lead.second_phone = contact_properties['phone_number_1']
+                            if contact_properties.get('telegram') or contact_properties.get('telegram__cloned_'):
+                                existing_lead.telegram_nickname = contact_properties.get('telegram') or contact_properties.get('telegram__cloned_')
+                            if contact_properties.get('messenger') or contact_properties.get('messenger__cloned_'):
+                                existing_lead.messenger = contact_properties.get('messenger') or contact_properties.get('messenger__cloned_')
+                            if contact_properties.get('company'):
+                                existing_lead.company = contact_properties['company']
+                            
+                            updated_count += 1
+                            print(f"✅ Оновлено лід {existing_lead.id} з HubSpot контакту {contact_id}")
+                        else:
+                            # Перевіряємо, чи не існує лід з таким телефоном або email
+                            duplicate_lead = Lead.query.filter(
+                                (Lead.phone == formatted_phone) | (Lead.email == email)
+                            ).first()
+                            
+                            if duplicate_lead:
+                                # Якщо знайдено дублікат, оновлюємо його
+                                duplicate_lead.hubspot_contact_id = contact_id
+                                if agent_id:
+                                    duplicate_lead.agent_id = agent_id
+                                updated_count += 1
+                                print(f"✅ Оновлено дублікат ліда {duplicate_lead.id} з HubSpot контакту {contact_id}")
+                            else:
+                                # Створюємо новий лід
+                                new_lead = Lead(
+                                    agent_id=agent_id,
+                                    deal_name=deal_name,
+                                    email=email,
+                                    phone=formatted_phone,
+                                    budget='до 200к',
+                                    status='new',
+                                    hubspot_contact_id=contact_id,
+                                    second_phone=contact_properties.get('phone_number_1'),
+                                    telegram_nickname=contact_properties.get('telegram') or contact_properties.get('telegram__cloned_'),
+                                    messenger=contact_properties.get('messenger') or contact_properties.get('messenger__cloned_'),
+                                    company=contact_properties.get('company')
+                                )
+                                
+                                db.session.add(new_lead)
+                                created_count += 1
+                                print(f"✅ Створено новий лід з HubSpot контакту {contact_id}")
+                        
+                    except Exception as contact_error:
+                        print(f"❌ Помилка обробки контакту {contact.id}: {contact_error}")
+                        app.logger.error(f"❌ Помилка обробки контакту {contact.id}: {contact_error}")
+                        errors_count += 1
+                        traceback.print_exc()
+                
+                # Перевіряємо, чи є ще сторінки
+                if not contacts_response.paging or not contacts_response.paging.next:
+                    break
+                
+                after = contacts_response.paging.next.after
+                page += 1
+                
+                # Додаємо затримку між сторінками для rate limiting
+                time.sleep(0.5)
+                
+                # Комітимо кожні 100 контактів для зменшення навантаження на БД
+                if page % 10 == 0:
+                    db.session.commit()
+                    print(f"💾 Збережено прогрес: сторінка {page}")
+                
+            except Exception as page_error:
+                print(f"❌ Помилка отримання сторінки {page + 1}: {page_error}")
+                app.logger.error(f"❌ Помилка отримання сторінки {page + 1}: {page_error}")
+                errors_count += 1
+                break
+        
+        db.session.commit()
+        
+        result = {
+            'created': created_count,
+            'updated': updated_count,
+            'errors': errors_count,
+            'total_processed': created_count + updated_count
+        }
+        
+        print(f"✅ Завантаження контактів завершено: створено {created_count}, оновлено {updated_count}, помилок {errors_count}")
+        app.logger.info(f"✅ Завантаження HubSpot контактів завершено: створено {created_count}, оновлено {updated_count}, помилок {errors_count}")
+        
+        return result
+        
+    except Exception as e:
+        print(f"❌ Критична помилка при завантаженні контактів з HubSpot: {e}")
+        app.logger.error(f"❌ Критична помилка при завантаженні контактів з HubSpot: {e}")
+        traceback.print_exc()
+        db.session.rollback()
+        return {'created': 0, 'updated': 0, 'errors': 1, 'total_processed': 0}
+
 def background_sync_task():
     """Фонова задача для автоматичної синхронізації лідів"""
     print("🔄 Запущено фонову синхронізацію")
@@ -1789,15 +1998,26 @@ def background_sync_task():
         try:
             current_time = time.time()
             
-            # Повна синхронізація (завантаження всіх deals) раз на годину
+            # Повна синхронізація (завантаження всіх контактів з HubSpot CRM) раз на годину
             if current_time - last_full_sync >= full_sync_interval:
                 with app.app_context():
                     if hubspot_client:
-                        print("⏰ Початок повної синхронізації з HubSpot (завантаження всіх deals)...")
-                        app.logger.info("⏰ Початок повної синхронізації з HubSpot...")
-                        result = fetch_all_deals_from_hubspot()
-                        print(f"✅ Повна синхронізація завершена: створено {result.get('created', 0)}, оновлено {result.get('updated', 0)}")
-                        app.logger.info(f"✅ Повна синхронізація завершена: створено {result.get('created', 0)}, оновлено {result.get('updated', 0)}")
+                        print("⏰ Початок повної синхронізації з HubSpot CRM (завантаження всіх контактів)...")
+                        app.logger.info("⏰ Початок повної синхронізації з HubSpot CRM...")
+                        
+                        # Спочатку завантажуємо всі контакти з HubSpot CRM
+                        contacts_result = fetch_all_contacts_from_hubspot()
+                        print(f"✅ Контакти завантажено: створено {contacts_result.get('created', 0)}, оновлено {contacts_result.get('updated', 0)}")
+                        
+                        # Потім завантажуємо deals (для оновлення додаткової інформації)
+                        deals_result = fetch_all_deals_from_hubspot()
+                        print(f"✅ Deals завантажено: створено {deals_result.get('created', 0)}, оновлено {deals_result.get('updated', 0)}")
+                        
+                        total_created = contacts_result.get('created', 0) + deals_result.get('created', 0)
+                        total_updated = contacts_result.get('updated', 0) + deals_result.get('updated', 0)
+                        
+                        print(f"✅ Повна синхронізація завершена: всього створено {total_created}, оновлено {total_updated}")
+                        app.logger.info(f"✅ Повна синхронізація завершена: всього створено {total_created}, оновлено {total_updated}")
                         last_full_sync = current_time
                     else:
                         print("⚠️ HubSpot API не налаштований, повна синхронізація пропущена")
