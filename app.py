@@ -3417,6 +3417,12 @@ def sync_single_lead(lead_id):
     except Exception as e:
         return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
 
+@app.route('/knowledge-base')
+@login_required
+def knowledge_base():
+    """Сторінка Knowledge Base - показує модалку 'to be soon'"""
+    return render_template('knowledge_base.html')
+
 @app.route('/admin/hubspot-contacts')
 @login_required
 def admin_hubspot_contacts():
