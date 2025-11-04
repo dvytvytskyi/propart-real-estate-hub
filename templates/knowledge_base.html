@@ -6,8 +6,8 @@
 <div class="content-area">
     <div class="container-fluid">
         <!-- Модалка для Knowledge Base -->
-        <div class="modal fade show d-block" id="knowledgeBaseModal" tabindex="-1" aria-labelledby="knowledgeBaseModalLabel" role="dialog">
-            <div class="modal-dialog modal-dialog-centered">
+        <div class="modal fade show d-block" id="knowledgeBaseModal" tabindex="-1" aria-labelledby="knowledgeBaseModalLabel" role="dialog" style="display: flex !important; align-items: center; justify-content: center;">
+            <div class="modal-dialog modal-dialog-centered" style="margin: 0 auto;">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title" id="knowledgeBaseModalLabel">
@@ -56,6 +56,11 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <style>
+.content-area {
+    position: relative;
+    min-height: 100vh;
+}
+
 .modal.show {
     display: block !important;
 }
@@ -77,21 +82,33 @@ document.addEventListener('DOMContentLoaded', function() {
     left: 0;
     width: 100%;
     height: 100%;
-    display: flex;
+    display: flex !important;
     align-items: center;
     justify-content: center;
+    margin: 0;
+    padding: 0;
 }
 
 .modal-dialog {
-    margin: 0;
+    margin: 0 auto;
     max-width: 500px;
     width: 90%;
+    position: relative;
+    transform: none !important;
+}
+
+.modal-dialog-centered {
+    display: flex;
+    align-items: center;
+    min-height: calc(100% - 1rem);
 }
 
 .modal-content {
     border-radius: 10px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
     border: none;
+    position: relative;
+    margin: 0 auto;
 }
 
 .modal-body {
