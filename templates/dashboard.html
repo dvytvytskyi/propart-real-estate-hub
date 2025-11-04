@@ -19,8 +19,11 @@
         </div>
         <div class="header-actions" style="display: flex; gap: 0.5rem;">
             {% if current_user.role == 'admin' %}
+            <button id="fetchAllContactsBtn" class="btn btn-success btn-sm" onclick="fetchAllContactsFromHubSpot()" title="Завантажити всі контакти з HubSpot CRM">
+                <i class="fas fa-sync-alt me-1"></i> Синхронізувати контакти
+            </button>
             <button id="fetchAllDealsBtn" class="btn btn-secondary btn-sm" onclick="fetchAllDealsFromHubSpot()" title="Завантажити всі deals з HubSpot">
-                <i class="fas fa-sync-alt me-1"></i> Завантажити з HubSpot
+                <i class="fas fa-sync-alt me-1"></i> Завантажити deals
             </button>
             {% endif %}
             <a href="{{ url_for('add_lead') }}" class="btn btn-primary btn-sm">
@@ -484,6 +487,48 @@ function showAlert(type, message) {
     setTimeout(() => {
         alertDiv.remove();
     }, 5000);
+}
+
+// Функція для завантаження всіх контактів з HubSpot CRM
+function fetchAllContactsFromHubSpot() {
+    const btn = document.getElementById('fetchAllContactsBtn');
+    if (!btn) return;
+    
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Синхронізація...';
+    
+    showAlert('info', '🔄 Почато синхронізацію всіх контактів з HubSpot CRM. Це може зайняти кілька хвилин...');
+    
+    fetch('/fetch_all_contacts', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', `✅ ${data.message}`);
+            console.log('✅ Завантаження успішне:', data);
+            // Перезавантажуємо сторінку через 3 секунди
+            setTimeout(() => {
+                location.reload();
+            }, 3000);
+        } else {
+            showAlert('danger', `❌ ${data.message}`);
+            console.error('❌ Помилка завантаження:', data.message);
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    })
+    .catch(error => {
+        console.error('❌ Помилка при завантаженні:', error);
+        showAlert('danger', 'Помилка при синхронізації з HubSpot CRM');
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
 }
 
 // Функція для завантаження всіх deals з HubSpot

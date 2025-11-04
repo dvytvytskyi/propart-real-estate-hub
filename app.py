@@ -3318,6 +3318,31 @@ def fetch_all_deals():
         traceback.print_exc()
         return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
 
+@app.route('/fetch_all_contacts', methods=['POST'])
+@login_required
+def fetch_all_contacts():
+    """Ручне завантаження всіх контактів з HubSpot CRM та створення/оновлення ліди в локальній БД"""
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Тільки адміністратор може завантажувати всі контакти'})
+    
+    if not hubspot_client:
+        return jsonify({'success': False, 'message': 'HubSpot API не налаштований'})
+    
+    try:
+        result = fetch_all_contacts_from_hubspot()
+        return jsonify({
+            'success': True,
+            'message': f'Завантажено: створено {result.get("created", 0)}, оновлено {result.get("updated", 0)}, помилок {result.get("errors", 0)}',
+            'created': result.get('created', 0),
+            'updated': result.get('updated', 0),
+            'errors': result.get('errors', 0),
+            'total_processed': result.get('total_processed', 0)
+        })
+    except Exception as e:
+        app.logger.error(f"Помилка завантаження контактів: {e}")
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
+
 @app.route('/sync_lead/<int:lead_id>', methods=['POST'])
 @login_required
 def sync_single_lead(lead_id):
