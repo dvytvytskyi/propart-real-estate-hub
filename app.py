@@ -506,7 +506,7 @@ class LeadForm(Form):
         ('1млн+', '1млн+')
     ], validators=[validators.DataRequired()])
     notes = TextAreaField('Примітки', [validators.Length(max=500)])
-    agent_id = HiddenField('Agent ID')
+    agent_id = SelectField('Відповідальний агент', coerce=int, validators=[validators.DataRequired()])
 
 class NoteForm(Form):
     note_text = TextAreaField('Нотатка', [validators.DataRequired(), validators.Length(min=1, max=1000)])
@@ -2764,14 +2764,20 @@ def dashboard():
 @app.route('/add_lead', methods=['GET', 'POST'])
 @login_required
 def add_lead():
+    # Отримуємо всіх користувачів для дропдауна (тільки для адміна)
+    all_users = User.query.order_by(User.username).all()
+    user_choices = [(user.id, f"{user.username} ({user.role})") for user in all_users]
+    
     form = LeadForm(request.form)
+    form.agent_id.choices = user_choices
     
     # Встановлюємо agent_id для поточного користувача
     if current_user.role == 'agent':
         form.agent_id.data = current_user.id
     elif current_user.role == 'admin':
         # Для адміна можна вибрати агента, але за замовчуванням - поточний користувач
-        form.agent_id.data = current_user.id
+        if not form.agent_id.data:
+            form.agent_id.data = current_user.id
     
     # === ДЕТАЛЬНЕ ЛОГУВАННЯ ДЛЯ ДІАГНОСТИКИ ===
     app.logger.info("=" * 80)
@@ -2833,9 +2839,12 @@ def add_lead():
                     pass
             
             app.logger.info("💾 Створюємо лід у локальній БД...")
+            # Отримуємо agent_id з форми (для адміна може бути вибраний інший агент)
+            selected_agent_id = form.agent_id.data if form.agent_id.data else current_user.id
+            
             # Створюємо лід локально
             lead = Lead(
-                agent_id=current_user.id,
+                agent_id=selected_agent_id,
                 deal_name=form.deal_name.data,
                 email=form.email.data,
                 phone=formatted_phone,
@@ -2854,7 +2863,7 @@ def add_lead():
             app.logger.info(f"✅ Лід додано до сесії БД")
             
             # Нараховуємо поінти за створення ліда
-            agent = User.query.get(form.agent_id.data)
+            agent = User.query.get(selected_agent_id)
             if agent:
                 app.logger.info(f"🎯 Нараховуємо 100 поінтів агенту {agent.username}")
                 agent.add_points(100)  # 100 поінтів за лід

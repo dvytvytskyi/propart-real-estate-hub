@@ -186,8 +186,32 @@
                             {% endif %}
                         </div>
                         
-                        <!-- Приховане поле для agent_id -->
+                        {% if current_user.role == 'admin' %}
+                        <div class="form-group full-width">
+                            <label for="agent_id" class="form-label">
+                                <i class="fas fa-user-tie"></i>
+                                <span>Відповідальний агент</span>
+                            </label>
+                            <select class="form-input" id="agent_id" name="agent_id" required>
+                                {% for user_id, user_label in form.agent_id.choices %}
+                                    <option value="{{ user_id }}" {% if user_id == form.agent_id.data or (not form.agent_id.data and user_id == current_user.id) %}selected{% endif %}>
+                                        {{ user_label }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-hint">Виберіть відповідального агента за цей лід</div>
+                            {% if form.agent_id.errors %}
+                                <div class="form-error">
+                                    {% for error in form.agent_id.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <!-- Приховане поле для agent_id (для не-адмінів) -->
                         <input type="hidden" name="agent_id" value="{{ current_user.id }}">
+                        {% endif %}
                         
                         <div class="form-actions">
                             <a href="{{ url_for('dashboard') }}" class="btn-cancel">
