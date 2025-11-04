@@ -3152,7 +3152,7 @@ def admin_hubspot_contacts():
         # Отримуємо всі контакти з HubSpot (посторінково)
         after = None
         page = 0
-        max_pages = 100  # Обмежуємо кількість сторінок для безпеки
+        max_pages = 1000  # Збільшено для завантаження всіх контактів
         
         while page < max_pages:
             try:
@@ -3230,6 +3230,134 @@ def admin_hubspot_contacts():
         flash(f'Помилка завантаження контактів: {str(e)}', 'error')
     
     return render_template('admin_hubspot_contacts.html', contacts=contacts_data)
+
+@app.route('/admin/hubspot-contacts/export-csv')
+@login_required
+def admin_hubspot_contacts_export_csv():
+    """Експорт всіх номерів телефонів з HubSpot CRM в CSV файл"""
+    if current_user.role != 'admin':
+        flash('Доступ заборонено')
+        return redirect(url_for('dashboard'))
+    
+    if not hubspot_client:
+        flash('HubSpot API не налаштований', 'error')
+        return redirect(url_for('dashboard'))
+    
+    import csv
+    from io import StringIO
+    
+    contacts_data = []
+    
+    try:
+        print("🔄 Завантаження всіх контактів з HubSpot для експорту...")
+        app.logger.info("🔄 Завантаження всіх контактів з HubSpot для експорту...")
+        
+        # Отримуємо всі контакти з HubSpot (посторінково)
+        after = None
+        page = 0
+        max_pages = 1000  # Збільшено для завантаження всіх контактів
+        
+        while page < max_pages:
+            try:
+                # Властивості, які потрібні для контактів
+                properties = [
+                    'phone', 'phone_number', 'mobilephone', 'hs_phone_number',
+                    'phone_number_1', 'email', 'firstname', 'lastname'
+                ]
+                
+                # Отримуємо сторінку контактів
+                if after:
+                    contacts_response = hubspot_client.crm.contacts.basic_api.get_page(
+                        limit=100,
+                        after=after,
+                        properties=properties
+                    )
+                else:
+                    contacts_response = hubspot_client.crm.contacts.basic_api.get_page(
+                        limit=100,
+                        properties=properties
+                    )
+                
+                if not contacts_response.results:
+                    break
+                
+                print(f"📄 Сторінка {page + 1}: отримано {len(contacts_response.results)} контактів")
+                
+                # Обробляємо кожен контакт
+                for contact in contacts_response.results:
+                    contact_id = str(contact.id)
+                    
+                    # Отримуємо всі номери телефонів з контакту
+                    phone_numbers = []
+                    
+                    # Перевіряємо всі можливі поля телефонів
+                    for phone_field in ['phone', 'phone_number', 'mobilephone', 'hs_phone_number', 'phone_number_1']:
+                        phone_value = contact.properties.get(phone_field)
+                        if phone_value:
+                            phone_numbers.append(phone_value)
+                    
+                    # Якщо є номери, додаємо контакт до списку
+                    # Але також додаємо контакти БЕЗ номерів, якщо потрібно показати всі
+                    if phone_numbers:
+                        # Для кожного номера створюємо окремий рядок
+                        for phone in phone_numbers:
+                            contacts_data.append({
+                                'id': contact_id,
+                                'phone': phone,
+                                'email': contact.properties.get('email', ''),
+                                'name': f"{contact.properties.get('firstname', '')} {contact.properties.get('lastname', '')}".strip() or 'Без імені'
+                            })
+                
+                # Перевіряємо, чи є ще сторінки
+                if not contacts_response.paging or not contacts_response.paging.next:
+                    break
+                
+                after = contacts_response.paging.next.after
+                page += 1
+                
+                # Додаємо затримку між сторінками для rate limiting
+                time.sleep(0.5)
+                
+            except Exception as page_error:
+                print(f"❌ Помилка отримання сторінки {page + 1}: {page_error}")
+                app.logger.error(f"❌ Помилка отримання сторінки {page + 1}: {page_error}")
+                break
+        
+        print(f"✅ Завантажено {len(contacts_data)} номерів телефонів для експорту")
+        app.logger.info(f"✅ Завантажено {len(contacts_data)} номерів телефонів для експорту")
+        
+        # Створюємо CSV файл
+        output = StringIO()
+        writer = csv.writer(output)
+        
+        # Заголовки
+        writer.writerow(['ID', 'Номер телефону', 'Email', 'Ім\'я'])
+        
+        # Дані
+        for contact in contacts_data:
+            writer.writerow([
+                contact['id'],
+                contact['phone'],
+                contact['email'],
+                contact['name']
+            ])
+        
+        # Створюємо відповідь з CSV файлом
+        from datetime import datetime
+        filename = f"hubspot_contacts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        return response
+        
+    except Exception as e:
+        print(f"❌ Критична помилка при експорті контактів з HubSpot: {e}")
+        app.logger.error(f"❌ Критична помилка при експорті контактів з HubSpot: {e}")
+        traceback.print_exc()
+        flash(f'Помилка експорту контактів: {str(e)}', 'error')
+        return redirect(url_for('admin_hubspot_contacts'))
 
 @app.route('/admin/users')
 @login_required
