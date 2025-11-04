@@ -1486,24 +1486,335 @@ def sync_all_leads_from_hubspot():
     print(f"Синхронізовано {synced_count} з {len(leads)} лідів")
     return synced_count > 0
 
+def fetch_all_deals_from_hubspot():
+    """Завантажує всі deals з HubSpot та створює/оновлює ліди в локальній БД"""
+    if not hubspot_client:
+        print("⚠️ HubSpot API не налаштований")
+        app.logger.warning("HubSpot API не налаштований для завантаження deals")
+        return {'created': 0, 'updated': 0, 'errors': 0}
+    
+    try:
+        print("🔄 Початок завантаження всіх deals з HubSpot...")
+        app.logger.info("🔄 Початок завантаження всіх deals з HubSpot...")
+        
+        created_count = 0
+        updated_count = 0
+        errors_count = 0
+        
+        # Отримуємо всі deals з HubSpot (посторінково)
+        after = None
+        page = 0
+        max_pages = 100  # Обмежуємо кількість сторінок для безпеки
+        
+        while page < max_pages:
+            try:
+                # Властивості, які потрібні для deals
+                properties = [
+                    'dealname', 'dealstage', 'amount', 'closedate', 'createdate',
+                    'hubspot_owner_id', 'responisble_agent', 'from_agent_portal__name_',
+                    'birthdate', 'pipeline'
+                ]
+                
+                # Отримуємо сторінку deals
+                if after:
+                    deals_response = hubspot_client.crm.deals.basic_api.get_page(
+                        limit=100,
+                        after=after,
+                        properties=properties
+                    )
+                else:
+                    deals_response = hubspot_client.crm.deals.basic_api.get_page(
+                        limit=100,
+                        properties=properties
+                    )
+                
+                if not deals_response.results:
+                    break
+                
+                print(f"📄 Сторінка {page + 1}: отримано {len(deals_response.results)} deals")
+                app.logger.info(f"📄 Сторінка {page + 1}: отримано {len(deals_response.results)} deals")
+                
+                # Обробляємо кожен deal
+                for deal in deals_response.results:
+                    try:
+                        deal_id = str(deal.id)
+                        deal_properties = deal.properties
+                        
+                        # Перевіряємо, чи існує лід з цим deal_id
+                        existing_lead = Lead.query.filter_by(hubspot_deal_id=deal_id).first()
+                        
+                        # Отримуємо контакт, пов'язаний з deal
+                        contact_id = None
+                        try:
+                            # Отримуємо асоціації контакту з deal
+                            associations = hubspot_client.crm.deals.associations_api.get_all(
+                                deal_id=deal_id,
+                                to_object_type='contacts'
+                            )
+                            if associations.results:
+                                contact_id = str(associations.results[0].id)
+                        except Exception as assoc_error:
+                            print(f"⚠️ Помилка отримання асоціацій для deal {deal_id}: {assoc_error}")
+                            app.logger.warning(f"⚠️ Помилка отримання асоціацій для deal {deal_id}: {assoc_error}")
+                        
+                        # Якщо контакт не знайдено, пропускаємо deal
+                        if not contact_id:
+                            print(f"⚠️ Deal {deal_id} не має пов'язаного контакту, пропускаємо")
+                            continue
+                        
+                        # Отримуємо дані контакту
+                        try:
+                            contact = hubspot_client.crm.contacts.basic_api.get_by_id(
+                                contact_id=contact_id,
+                                properties=[
+                                    'email', 'phone', 'phone_number', 'mobilephone', 'hs_phone_number',
+                                    'firstname', 'lastname', 'phone_number_1', 'telegram', 'telegram__cloned_',
+                                    'messenger', 'messenger__cloned_', 'birthdate', 'birthdate__cloned_', 'company'
+                                ]
+                            )
+                        except Exception as contact_error:
+                            print(f"⚠️ Помилка отримання контакту {contact_id}: {contact_error}")
+                            errors_count += 1
+                            continue
+                        
+                        # Визначаємо телефон контакту
+                        phone = None
+                        if contact.properties.get('phone_number'):
+                            phone = contact.properties['phone_number']
+                        elif contact.properties.get('mobilephone'):
+                            phone = contact.properties['mobilephone']
+                        elif contact.properties.get('hs_phone_number'):
+                            phone = contact.properties['hs_phone_number']
+                        elif contact.properties.get('phone'):
+                            phone = contact.properties['phone']
+                        
+                        if not phone:
+                            print(f"⚠️ Контакт {contact_id} не має телефону, пропускаємо")
+                            continue
+                        
+                        # Форматуємо телефон
+                        try:
+                            parsed_phone = phonenumbers.parse(phone, None)
+                            formatted_phone = phonenumbers.format_number(
+                                parsed_phone, 
+                                phonenumbers.PhoneNumberFormat.INTERNATIONAL
+                            )
+                        except:
+                            formatted_phone = phone
+                        
+                        # Визначаємо email
+                        email = contact.properties.get('email', '')
+                        if not email:
+                            print(f"⚠️ Контакт {contact_id} не має email, пропускаємо")
+                            continue
+                        
+                        # Визначаємо ім'я
+                        firstname = contact.properties.get('firstname', '')
+                        lastname = contact.properties.get('lastname', '')
+                        deal_name = deal_properties.get('dealname', '')
+                        if not deal_name:
+                            if firstname and lastname:
+                                deal_name = f"{firstname} {lastname}"
+                            elif firstname:
+                                deal_name = firstname
+                            elif lastname:
+                                deal_name = lastname
+                            else:
+                                deal_name = email.split('@')[0]
+                        
+                        # Визначаємо агента (за замовчуванням перший адмін або перший агент)
+                        default_agent = User.query.filter(
+                            (User.role == 'admin') | (User.role == 'agent')
+                        ).first()
+                        agent_id = default_agent.id if default_agent else None
+                        
+                        # Спробуємо знайти агента за email з HubSpot owner
+                        if deal_properties.get('hubspot_owner_id'):
+                            try:
+                                owner = hubspot_client.crm.owners.owners_api.get_by_id(
+                                    owner_id=deal_properties['hubspot_owner_id']
+                                )
+                                if owner and owner.email:
+                                    owner_user = User.query.filter_by(email=owner.email).first()
+                                    if owner_user:
+                                        agent_id = owner_user.id
+                            except Exception as owner_error:
+                                print(f"⚠️ Помилка отримання owner: {owner_error}")
+                        
+                        if not agent_id:
+                            print(f"⚠️ Не знайдено агента для deal {deal_id}, пропускаємо")
+                            continue
+                        
+                        # Визначаємо статус з deal stage
+                        status = 'new'
+                        deal_stage = deal_properties.get('dealstage', '')
+                        if deal_stage:
+                            # Мапінг стадій HubSpot на статуси системи
+                            if 'closedwon' in deal_stage.lower() or 'closed won' in deal_stage.lower():
+                                status = 'closed'
+                            elif 'qualified' in deal_stage.lower():
+                                status = 'qualified'
+                            elif 'contacted' in deal_stage.lower():
+                                status = 'contacted'
+                        
+                        # Визначаємо budget (з amount)
+                        budget = None
+                        if deal_properties.get('amount'):
+                            try:
+                                amount = float(deal_properties['amount'])
+                                if amount < 200000:
+                                    budget = 'до 200к'
+                                elif amount < 500000:
+                                    budget = '200к–500к'
+                                elif amount < 1000000:
+                                    budget = '500к–1млн'
+                                else:
+                                    budget = '1млн+'
+                            except:
+                                pass
+                        
+                        if existing_lead:
+                            # Оновлюємо існуючий лід
+                            existing_lead.deal_name = deal_name
+                            existing_lead.email = email
+                            existing_lead.phone = formatted_phone
+                            if budget:
+                                existing_lead.budget = budget
+                            existing_lead.status = status
+                            existing_lead.hubspot_contact_id = contact_id
+                            existing_lead.hubspot_deal_id = deal_id
+                            existing_lead.agent_id = agent_id
+                            
+                            # Оновлюємо додаткові поля
+                            if contact.properties.get('phone_number_1'):
+                                existing_lead.second_phone = contact.properties['phone_number_1']
+                            if contact.properties.get('telegram') or contact.properties.get('telegram__cloned_'):
+                                existing_lead.telegram_nickname = contact.properties.get('telegram') or contact.properties.get('telegram__cloned_')
+                            if contact.properties.get('messenger') or contact.properties.get('messenger__cloned_'):
+                                existing_lead.messenger = contact.properties.get('messenger') or contact.properties.get('messenger__cloned_')
+                            if contact.properties.get('company'):
+                                existing_lead.company = contact.properties['company']
+                            
+                            updated_count += 1
+                            print(f"✅ Оновлено лід {existing_lead.id} з HubSpot deal {deal_id}")
+                        else:
+                            # Перевіряємо, чи не існує лід з таким телефоном або email
+                            duplicate_lead = Lead.query.filter(
+                                (Lead.phone == formatted_phone) | (Lead.email == email)
+                            ).first()
+                            
+                            if duplicate_lead:
+                                # Якщо знайдено дублікат, оновлюємо його
+                                duplicate_lead.hubspot_contact_id = contact_id
+                                duplicate_lead.hubspot_deal_id = deal_id
+                                duplicate_lead.agent_id = agent_id
+                                if budget:
+                                    duplicate_lead.budget = budget
+                                duplicate_lead.status = status
+                                updated_count += 1
+                                print(f"✅ Оновлено дублікат ліда {duplicate_lead.id} з HubSpot deal {deal_id}")
+                            else:
+                                # Створюємо новий лід
+                                new_lead = Lead(
+                                    agent_id=agent_id,
+                                    deal_name=deal_name,
+                                    email=email,
+                                    phone=formatted_phone,
+                                    budget=budget or 'до 200к',
+                                    status=status,
+                                    hubspot_contact_id=contact_id,
+                                    hubspot_deal_id=deal_id,
+                                    second_phone=contact.properties.get('phone_number_1'),
+                                    telegram_nickname=contact.properties.get('telegram') or contact.properties.get('telegram__cloned_'),
+                                    messenger=contact.properties.get('messenger') or contact.properties.get('messenger__cloned_'),
+                                    company=contact.properties.get('company')
+                                )
+                                
+                                db.session.add(new_lead)
+                                created_count += 1
+                                print(f"✅ Створено новий лід з HubSpot deal {deal_id}")
+                        
+                    except Exception as deal_error:
+                        print(f"❌ Помилка обробки deal {deal.id}: {deal_error}")
+                        app.logger.error(f"❌ Помилка обробки deal {deal.id}: {deal_error}")
+                        errors_count += 1
+                        traceback.print_exc()
+                
+                # Перевіряємо, чи є ще сторінки
+                if not deals_response.paging or not deals_response.paging.next:
+                    break
+                
+                after = deals_response.paging.next.after
+                page += 1
+                
+                # Додаємо затримку між сторінками для rate limiting
+                time.sleep(0.5)
+                
+            except Exception as page_error:
+                print(f"❌ Помилка отримання сторінки {page + 1}: {page_error}")
+                app.logger.error(f"❌ Помилка отримання сторінки {page + 1}: {page_error}")
+                errors_count += 1
+                break
+        
+        db.session.commit()
+        
+        result = {
+            'created': created_count,
+            'updated': updated_count,
+            'errors': errors_count,
+            'total_processed': created_count + updated_count
+        }
+        
+        print(f"✅ Завантаження завершено: створено {created_count}, оновлено {updated_count}, помилок {errors_count}")
+        app.logger.info(f"✅ Завантаження HubSpot завершено: створено {created_count}, оновлено {updated_count}, помилок {errors_count}")
+        
+        return result
+        
+    except Exception as e:
+        print(f"❌ Критична помилка при завантаженні deals з HubSpot: {e}")
+        app.logger.error(f"❌ Критична помилка при завантаженні deals з HubSpot: {e}")
+        traceback.print_exc()
+        db.session.rollback()
+        return {'created': 0, 'updated': 0, 'errors': 1, 'total_processed': 0}
+
 def background_sync_task():
-    """Фонова задача для автоматичної синхронізації лідів кожні 5 хвилин (300 секунд)"""
-    print("🔄 Запущено фонову синхронізацію (кожні 5 хвилин)")
-    app.logger.info("🔄 Фонова синхронізація HubSpot запущена (інтервал: 5 хвилин)")
+    """Фонова задача для автоматичної синхронізації лідів"""
+    print("🔄 Запущено фонову синхронізацію")
+    app.logger.info("🔄 Фонова синхронізація HubSpot запущена")
+    
+    last_full_sync = 0  # Час останньої повної синхронізації (в секундах)
+    full_sync_interval = 3600  # 1 година для повної синхронізації
     
     while True:
         try:
-            time.sleep(300)  # Чекаємо 5 хвилин (300 секунд) - зменшуємо навантаження на HubSpot API
+            current_time = time.time()
+            
+            # Повна синхронізація (завантаження всіх deals) раз на годину
+            if current_time - last_full_sync >= full_sync_interval:
+                with app.app_context():
+                    if hubspot_client:
+                        print("⏰ Початок повної синхронізації з HubSpot (завантаження всіх deals)...")
+                        app.logger.info("⏰ Початок повної синхронізації з HubSpot...")
+                        result = fetch_all_deals_from_hubspot()
+                        print(f"✅ Повна синхронізація завершена: створено {result.get('created', 0)}, оновлено {result.get('updated', 0)}")
+                        app.logger.info(f"✅ Повна синхронізація завершена: створено {result.get('created', 0)}, оновлено {result.get('updated', 0)}")
+                        last_full_sync = current_time
+                    else:
+                        print("⚠️ HubSpot API не налаштований, повна синхронізація пропущена")
+            
+            # Часткова синхронізація (оновлення існуючих лідів) кожні 5 хвилин
+            time.sleep(300)  # Чекаємо 5 хвилин (300 секунд)
             
             with app.app_context():
                 if hubspot_client:
-                    print("⏰ Початок автоматичної синхронізації...")
+                    print("⏰ Початок автоматичної синхронізації існуючих лідів...")
                     sync_all_leads_from_hubspot()
                     print("✅ Автоматична синхронізація завершена")
                 else:
                     print("⚠️ HubSpot API не налаштований, синхронізація пропущена")
         except Exception as e:
             print(f"❌ Помилка в фоновій синхронізації: {e}")
+            app.logger.error(f"❌ Помилка в фоновій синхронізації: {e}")
             traceback.print_exc()
 
 def start_background_sync():
@@ -2746,7 +3057,7 @@ def sync_lead(lead_id):
 @app.route('/sync_all_leads', methods=['POST'])
 @login_required
 def sync_all_leads():
-    """Ручна синхронізація всіх лідів з HubSpot"""
+    """Ручна синхронізація всіх лідів з HubSpot (оновлення існуючих)"""
     if current_user.role != 'admin':
         return jsonify({'success': False, 'message': 'Тільки адміністратор може синхронізувати всі ліді'})
     
@@ -2760,6 +3071,31 @@ def sync_all_leads():
         else:
             return jsonify({'success': False, 'message': 'Помилка синхронізації з HubSpot'})
     except Exception as e:
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
+
+@app.route('/fetch_all_deals', methods=['POST'])
+@login_required
+def fetch_all_deals():
+    """Ручне завантаження всіх deals з HubSpot та створення/оновлення ліди в локальній БД"""
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Тільки адміністратор може завантажувати всі deals'})
+    
+    if not hubspot_client:
+        return jsonify({'success': False, 'message': 'HubSpot API не налаштований'})
+    
+    try:
+        result = fetch_all_deals_from_hubspot()
+        return jsonify({
+            'success': True,
+            'message': f'Завантажено: створено {result.get("created", 0)}, оновлено {result.get("updated", 0)}, помилок {result.get("errors", 0)}',
+            'created': result.get('created', 0),
+            'updated': result.get('updated', 0),
+            'errors': result.get('errors', 0),
+            'total_processed': result.get('total_processed', 0)
+        })
+    except Exception as e:
+        app.logger.error(f"Помилка завантаження deals: {e}")
+        traceback.print_exc()
         return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
 
 @app.route('/sync_lead/<int:lead_id>', methods=['POST'])
@@ -3119,27 +3455,30 @@ def check_phone_number():
         
         app.logger.info(f"   Очищений номер: '{clean_phone}'")
         
-        # Шукаємо ліди з схожими номерами
+        # Шукаємо ліди з схожими номерами (перевіряємо phone та second_phone)
         # Різна логіка для PostgreSQL та SQLite
         database_uri = app.config['SQLALCHEMY_DATABASE_URI']
         
         if database_uri.startswith('postgresql'):
-            # PostgreSQL підтримує regexp_replace
+            # PostgreSQL підтримує regexp_replace - перевіряємо обидва поля телефонів
             matching_leads = Lead.query.filter(
-                func.regexp_replace(Lead.phone, '[^0-9]', '', 'g').like(f'%{clean_phone}%')
+                (func.regexp_replace(Lead.phone, '[^0-9]', '', 'g').like(f'%{clean_phone}%')) |
+                (func.regexp_replace(Lead.second_phone, '[^0-9]', '', 'g').like(f'%{clean_phone}%'))
             ).limit(10).all()
         else:
             # Для SQLite використовуємо простий LIKE (номери вже відформатовані)
-            # Шукаємо по частковому співпадінню
+            # Шукаємо по частковому співпадінню в обох полях
             matching_leads = Lead.query.filter(
-                Lead.phone.like(f'%{clean_phone}%')
-            ).limit(10).all()
+                (Lead.phone.like(f'%{clean_phone}%')) |
+                (Lead.second_phone.like(f'%{clean_phone}%'))
+            ).limit(20).all()  # Більше ліміт, бо потім фільтруємо
             
             # Додаткова фільтрація в Python для SQLite
             filtered_leads = []
             for lead in matching_leads:
-                lead_clean = ''.join(filter(str.isdigit, lead.phone or ''))
-                if clean_phone in lead_clean:
+                lead_phone_clean = ''.join(filter(str.isdigit, lead.phone or ''))
+                lead_second_phone_clean = ''.join(filter(str.isdigit, lead.second_phone or ''))
+                if clean_phone in lead_phone_clean or clean_phone in lead_second_phone_clean:
                     filtered_leads.append(lead)
             matching_leads = filtered_leads[:10]
         
