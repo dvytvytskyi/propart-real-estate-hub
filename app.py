@@ -1504,7 +1504,7 @@ def fetch_all_deals_from_hubspot():
         # Отримуємо всі deals з HubSpot (посторінково)
         after = None
         page = 0
-        max_pages = 100  # Обмежуємо кількість сторінок для безпеки
+        max_pages = 1000  # Збільшено для завантаження всіх deals (до 100,000 deals)
         
         while page < max_pages:
             try:
@@ -1998,26 +1998,18 @@ def background_sync_task():
         try:
             current_time = time.time()
             
-            # Повна синхронізація (завантаження всіх контактів з HubSpot CRM) раз на годину
+            # Повна синхронізація (завантаження всіх deals з HubSpot) раз на годину
+            # Звірка йде по deals, тому завантажуємо deals, а не контакти
             if current_time - last_full_sync >= full_sync_interval:
                 with app.app_context():
                     if hubspot_client:
-                        print("⏰ Початок повної синхронізації з HubSpot CRM (завантаження всіх контактів)...")
-                        app.logger.info("⏰ Початок повної синхронізації з HubSpot CRM...")
+                        print("⏰ Початок повної синхронізації з HubSpot (завантаження всіх deals)...")
+                        app.logger.info("⏰ Початок повної синхронізації з HubSpot (завантаження всіх deals)...")
                         
-                        # Спочатку завантажуємо всі контакти з HubSpot CRM
-                        contacts_result = fetch_all_contacts_from_hubspot()
-                        print(f"✅ Контакти завантажено: створено {contacts_result.get('created', 0)}, оновлено {contacts_result.get('updated', 0)}")
-                        
-                        # Потім завантажуємо deals (для оновлення додаткової інформації)
+                        # Завантажуємо всі deals з HubSpot (з deals береться інформація про номери для звірки)
                         deals_result = fetch_all_deals_from_hubspot()
-                        print(f"✅ Deals завантажено: створено {deals_result.get('created', 0)}, оновлено {deals_result.get('updated', 0)}")
-                        
-                        total_created = contacts_result.get('created', 0) + deals_result.get('created', 0)
-                        total_updated = contacts_result.get('updated', 0) + deals_result.get('updated', 0)
-                        
-                        print(f"✅ Повна синхронізація завершена: всього створено {total_created}, оновлено {total_updated}")
-                        app.logger.info(f"✅ Повна синхронізація завершена: всього створено {total_created}, оновлено {total_updated}")
+                        print(f"✅ Deals завантажено: створено {deals_result.get('created', 0)}, оновлено {deals_result.get('updated', 0)}, помилок {deals_result.get('errors', 0)}")
+                        app.logger.info(f"✅ Повна синхронізація завершена: створено {deals_result.get('created', 0)}, оновлено {deals_result.get('updated', 0)}")
                         last_full_sync = current_time
                     else:
                         print("⚠️ HubSpot API не налаштований, повна синхронізація пропущена")
