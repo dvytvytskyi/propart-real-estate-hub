@@ -4603,6 +4603,15 @@ def upload_unit_photos(unit_id):
         return jsonify({'success': False, 'message': 'Помилка при завантаженні фото планування'})
 
 
+# Запускаємо фонову синхронізацію з HubSpot автоматично при завантаженні модуля
+# Це працює і для локального запуску, і для production (Gunicorn)
+try:
+    start_background_sync()
+    print("✅ Фонова синхронізація HubSpot запущена автоматично")
+except Exception as e:
+    print(f"⚠️ Не вдалося запустити фонову синхронізацію: {e}")
+    app.logger.warning(f"⚠️ Не вдалося запустити фонову синхронізацію: {e}")
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
@@ -4620,9 +4629,6 @@ if __name__ == '__main__':
             db.session.add(admin)
             db.session.commit()
             print("Створено адміна: username='admin', password='admin123'")
-    
-    # Запускаємо фонову синхронізацію з HubSpot
-    start_background_sync()
 
 # ===== ДІАГНОСТИЧНИЙ ЕНДПОІНТ =====
 @app.route('/api/diagnostic', methods=['GET'])
