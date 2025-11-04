@@ -54,6 +54,12 @@
                         <span>Користувачі</span>
                     </a>
                 </li>
+                <li class="sidebar-menu-item">
+                    <a href="{{ url_for('admin_hubspot_contacts') }}" class="sidebar-menu-button {{ 'active' if active_page == 'admin_hubspot_contacts' else '' }}">
+                        <i class="fas fa-address-book"></i>
+                        <span>HubSpot Контакти</span>
+                    </a>
+                </li>
                 {% endif %}
             </ul>
         </div>
