@@ -242,7 +242,7 @@
             
             <!-- Пагінація -->
             {% if pagination and pagination.pages > 1 %}
-            <div class="pagination-container" style="margin-top: 2rem; display: flex; justify-content: center; align-items: center; gap: 0.5rem;">
+            <div class="pagination-container" style="margin-top: 2rem; margin-bottom: 2rem; display: flex; justify-content: center; align-items: center; gap: 0.5rem;">
                 {% if pagination.has_prev %}
                     <a href="{{ url_for('dashboard', page=1, sort_by=sort_by, order=order) }}" 
                        class="pagination-btn" title="Перша сторінка">
