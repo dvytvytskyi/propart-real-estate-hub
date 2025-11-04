@@ -1668,9 +1668,9 @@ def fetch_all_deals_from_hubspot():
                                 default_agent = User.query.filter(
                                     (User.role == 'admin') | (User.role == 'agent')
                                 ).first()
-                                agent_id = default_agent.id if default_agent else None
                                 
                                 # Спробуємо знайти агента за email з HubSpot owner
+                                agent_id = None
                                 if deal_properties.get('hubspot_owner_id'):
                                     try:
                                         owner = hubspot_client.crm.owners.owners_api.get_by_id(
@@ -1681,11 +1681,17 @@ def fetch_all_deals_from_hubspot():
                                             if owner_user:
                                                 agent_id = owner_user.id
                                     except Exception as owner_error:
-                                        print(f"⚠️ Помилка отримання owner: {owner_error}")
+                                        app.logger.debug(f"⚠️ Помилка отримання owner: {owner_error}")
                                 
+                                # Якщо агент не знайдено, використовуємо default_agent
                                 if not agent_id:
-                                    print(f"⚠️ Не знайдено агента для deal {deal_id}, пропускаємо")
-                                    continue
+                                    if default_agent:
+                                        agent_id = default_agent.id
+                                        print(f"ℹ️ Використано агента за замовчуванням ({default_agent.username}) для deal {deal_id}")
+                                    else:
+                                        # Якщо взагалі немає агентів в системі - створюємо адміна
+                                        print(f"⚠️ Немає агентів в системі для deal {deal_id}, пропускаємо")
+                                        continue
                                 
                                 # Визначаємо статус з deal stage
                                 status = 'new'
@@ -2664,7 +2670,12 @@ def dashboard():
         broker_ids = [broker.id for broker in User.query.filter_by(admin_id=current_user.id, role='agent').all()]
         # Додаємо ID самого адміна до списку
         all_agent_ids = broker_ids + [current_user.id]
-        leads_query = Lead.query.filter(Lead.agent_id.in_(all_agent_ids))
+        # Якщо немає брокерів, адмін бачить тільки свої ліди
+        if all_agent_ids:
+            leads_query = Lead.query.filter(Lead.agent_id.in_(all_agent_ids))
+        else:
+            # Якщо немає брокерів, показуємо всі ліди (для адміна)
+            leads_query = Lead.query
     else:
         leads_query = Lead.query.filter_by(agent_id=current_user.id)
     
