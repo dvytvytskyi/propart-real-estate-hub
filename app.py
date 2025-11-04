@@ -3458,22 +3458,33 @@ def check_phone_number():
         
         app.logger.info(f"   Очищений номер: '{clean_phone}'")
         
+        # Нормалізуємо номер для пошуку - залишаємо тільки останні 7-9 цифр для кращого пошуку
+        # (це дозволяє знаходити номери навіть якщо код країни введено по-різному)
+        if len(clean_phone) >= 7:
+            # Беремо останні 7-9 цифр для пошуку (це більшість номерів мобільних)
+            search_phone = clean_phone[-9:] if len(clean_phone) >= 9 else clean_phone[-7:]
+        else:
+            search_phone = clean_phone
+        
+        app.logger.info(f"   Номер для пошуку: '{search_phone}'")
+        
         # Шукаємо ліди з схожими номерами (перевіряємо phone та second_phone)
         # Різна логіка для PostgreSQL та SQLite
         database_uri = app.config['SQLALCHEMY_DATABASE_URI']
         
         if database_uri.startswith('postgresql'):
             # PostgreSQL підтримує regexp_replace - перевіряємо обидва поля телефонів
+            # Шукаємо по останніх цифрах номера
             matching_leads = Lead.query.filter(
-                (func.regexp_replace(Lead.phone, '[^0-9]', '', 'g').like(f'%{clean_phone}%')) |
-                (func.regexp_replace(Lead.second_phone, '[^0-9]', '', 'g').like(f'%{clean_phone}%'))
+                (func.regexp_replace(Lead.phone, '[^0-9]', '', 'g').like(f'%{search_phone}')) |
+                (func.regexp_replace(Lead.second_phone, '[^0-9]', '', 'g').like(f'%{search_phone}'))
             ).limit(10).all()
         else:
             # Для SQLite використовуємо простий LIKE (номери вже відформатовані)
             # Шукаємо по частковому співпадінню в обох полях
             matching_leads = Lead.query.filter(
-                (Lead.phone.like(f'%{clean_phone}%')) |
-                (Lead.second_phone.like(f'%{clean_phone}%'))
+                (Lead.phone.like(f'%{search_phone}')) |
+                (Lead.second_phone.like(f'%{search_phone}'))
             ).limit(20).all()  # Більше ліміт, бо потім фільтруємо
             
             # Додаткова фільтрація в Python для SQLite
@@ -3481,7 +3492,9 @@ def check_phone_number():
             for lead in matching_leads:
                 lead_phone_clean = ''.join(filter(str.isdigit, lead.phone or ''))
                 lead_second_phone_clean = ''.join(filter(str.isdigit, lead.second_phone or ''))
-                if clean_phone in lead_phone_clean or clean_phone in lead_second_phone_clean:
+                # Перевіряємо, чи останні цифри співпадають
+                if (lead_phone_clean and lead_phone_clean.endswith(search_phone)) or \
+                   (lead_second_phone_clean and lead_second_phone_clean.endswith(search_phone)):
                     filtered_leads.append(lead)
             matching_leads = filtered_leads[:10]
         
