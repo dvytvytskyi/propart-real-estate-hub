@@ -1056,10 +1056,16 @@ def fetch_notes_from_hubspot(lead, after_timestamp=None):
             
             # Отримуємо ID нотаток з асоціацій (різні версії SDK можуть мати різну структуру)
             note_ids = []
+            app.logger.info(f"   Знайдено {len(associations_response.results)} асоціацій нотаток для deal {lead.hubspot_deal_id}")
+            
             for assoc in associations_response.results:
                 try:
                     # Спробуємо різні способи отримання ID
                     note_id = None
+                    
+                    # Спочатку перевіримо тип об'єкта
+                    app.logger.debug(f"   Тип асоціації: {type(assoc)}, атрибути: {dir(assoc) if hasattr(assoc, '__dict__') else 'N/A'}")
+                    
                     if hasattr(assoc, 'to_object_id'):
                         note_id = str(assoc.to_object_id)
                     elif hasattr(assoc, 'id'):
@@ -1067,12 +1073,24 @@ def fetch_notes_from_hubspot(lead, after_timestamp=None):
                     elif isinstance(assoc, dict):
                         note_id = str(assoc.get('id') or assoc.get('to_object_id'))
                     elif hasattr(assoc, '__dict__'):
-                        note_id = str(assoc.__dict__.get('id') or assoc.__dict__.get('to_object_id'))
+                        attrs = assoc.__dict__
+                        note_id = str(attrs.get('id') or attrs.get('to_object_id') or attrs.get('toObjectId'))
+                    else:
+                        # Спробуємо отримати через індекс або рядкове представлення
+                        try:
+                            note_id = str(assoc)
+                        except:
+                            pass
                     
-                    if note_id:
+                    if note_id and note_id != 'None':
                         note_ids.append(note_id)
+                        app.logger.info(f"   ✅ Знайдено нотатку з ID: {note_id}")
+                    else:
+                        app.logger.warning(f"   ⚠️ Не вдалося отримати ID з асоціації: {assoc}")
                 except Exception as assoc_parse_error:
-                    app.logger.warning(f"⚠️ Помилка парсингу асоціації: {assoc_parse_error}, assoc: {assoc}")
+                    app.logger.warning(f"⚠️ Помилка парсингу асоціації: {assoc_parse_error}, assoc type: {type(assoc)}, assoc: {assoc}")
+                    import traceback
+                    app.logger.debug(f"   Traceback: {traceback.format_exc()}")
                     continue
             
             if not note_ids:
