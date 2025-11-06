@@ -678,6 +678,38 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Функція для витягування тексту з HTML (для нотаток з HubSpot)
+function extractTextFromHTML(htmlString) {
+    if (!htmlString) return '';
+    
+    // Якщо це не HTML, повертаємо як є
+    if (!htmlString.includes('<') || !htmlString.includes('>')) {
+        return htmlString;
+    }
+    
+    try {
+        // Створюємо тимчасовий елемент для парсингу HTML
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = htmlString;
+        
+        // Витягуємо текст
+        let text = tempDiv.textContent || tempDiv.innerText || '';
+        
+        // Очищаємо від зайвих пробілів та переносів
+        text = text.replace(/\s+/g, ' ').trim();
+        
+        return text || htmlString; // Якщо не вдалося витягти, повертаємо оригінал
+    } catch (e) {
+        console.warn('Помилка парсингу HTML:', e);
+        // Якщо не вдалося, спробуємо простий regex
+        try {
+            return htmlString.replace(/<[^>]+>/g, '').trim();
+        } catch {
+            return htmlString;
+        }
+    }
+}
+
 // Завантаження коментарів при завантаженні сторінки
 document.addEventListener('DOMContentLoaded', function() {
     // Завантажуємо коментарі
