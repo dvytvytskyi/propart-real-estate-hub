@@ -485,6 +485,39 @@ class Lead(db.Model):
     last_sync_at = db.Column(db.DateTime)  # Час останньої синхронізації з HubSpot
 
 
+class Comment(db.Model):
+    """Модель коментарів/нотаток для лідів (threaded comments)"""
+    __tablename__ = 'comment'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    lead_id = db.Column(db.Integer, db.ForeignKey('lead.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=True)  # Для threaded comments
+    content = db.Column(db.Text, nullable=False)  # Текст коментаря
+    hubspot_note_id = db.Column(db.String(50))  # ID нотатки в HubSpot
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
+    
+    # Зв'язки
+    lead = db.relationship('Lead', backref='comments')
+    user = db.relationship('User', backref='comments')
+    parent = db.relationship('Comment', remote_side=[id], backref='replies')
+    
+    def to_dict(self):
+        """Конвертує коментар в словник для JSON"""
+        return {
+            'id': self.id,
+            'lead_id': self.lead_id,
+            'user_id': self.user_id,
+            'user_name': self.user.username if self.user else 'Unknown',
+            'parent_id': self.parent_id,
+            'content': self.content,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'replies_count': len(self.replies) if self.replies else 0
+        }
+
+
 # Форми
 class LoginForm(Form):
     username = StringField('Ім\'я користувача', [validators.Length(min=4, max=25)])
@@ -3228,6 +3261,195 @@ def transfer_lead(lead_id):
         'message': 'Лід позначено як переданий' if lead.is_transferred else 'Лід позначено як не переданий'
     })
 
+
+# ==================== COMMENT/COMMENTS API ====================
+
+@app.route('/api/leads/<int:lead_id>/comments', methods=['GET'])
+@login_required
+def get_lead_comments(lead_id):
+    """Отримати всі коментарі для ліда (threaded structure)"""
+    lead = Lead.query.get_or_404(lead_id)
+    
+    # Перевірка прав доступу
+    if lead.agent_id != current_user.id and current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'У вас немає прав для перегляду цього ліда'}), 403
+    
+    try:
+        # Отримуємо всі коментарі для ліда
+        all_comments = Comment.query.filter_by(lead_id=lead_id).order_by(Comment.created_at.asc()).all()
+        
+        # Створюємо структуру для threaded comments
+        comments_dict = {}
+        root_comments = []
+        
+        for comment in all_comments:
+            comment_data = comment.to_dict()
+            comment_data['replies'] = []
+            comments_dict[comment.id] = comment_data
+            
+            if comment.parent_id is None:
+                # Це кореневий коментар
+                root_comments.append(comment_data)
+            else:
+                # Це відповідь - додаємо до батьківського коментаря
+                if comment.parent_id in comments_dict:
+                    comments_dict[comment.parent_id]['replies'].append(comment_data)
+        
+        return jsonify({
+            'success': True,
+            'comments': root_comments,
+            'total_count': len(all_comments)
+        })
+    except Exception as e:
+        app.logger.error(f"Помилка отримання коментарів: {e}")
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'}), 500
+
+@app.route('/api/leads/<int:lead_id>/comments', methods=['POST'])
+@login_required
+def create_lead_comment(lead_id):
+    """Створити новий коментар для ліда"""
+    lead = Lead.query.get_or_404(lead_id)
+    
+    # Перевірка прав доступу
+    if lead.agent_id != current_user.id and current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'У вас немає прав для коментування цього ліда'}), 403
+    
+    try:
+        data = request.get_json()
+        content = data.get('content', '').strip()
+        parent_id = data.get('parent_id')  # ID батьківського коментаря (для відповіді)
+        
+        if not content:
+            return jsonify({'success': False, 'message': 'Текст коментаря не може бути порожнім'}), 400
+        
+        # Перевірка, чи існує батьківський коментар (якщо вказано)
+        if parent_id:
+            parent_comment = Comment.query.filter_by(id=parent_id, lead_id=lead_id).first()
+            if not parent_comment:
+                return jsonify({'success': False, 'message': 'Батьківський коментар не знайдено'}), 404
+        
+        # Створюємо коментар
+        comment = Comment(
+            lead_id=lead_id,
+            user_id=current_user.id,
+            parent_id=parent_id,
+            content=content
+        )
+        db.session.add(comment)
+        db.session.flush()  # Отримуємо ID коментаря
+        
+        # Створюємо нотатку в HubSpot (якщо є deal_id)
+        if lead.hubspot_deal_id and hubspot_client:
+            try:
+                from hubspot.crm.objects.notes import SimplePublicObjectInput
+                
+                # Формуємо текст нотатки з інформацією про автора
+                note_body = f"[{current_user.username}]: {content}"
+                if parent_id:
+                    note_body = f"Відповідь на коментар:\n{note_body}"
+                
+                note_properties = {
+                    "hs_note_body": note_body
+                }
+                
+                note_input = SimplePublicObjectInput(properties=note_properties)
+                hubspot_note = hubspot_client.crm.objects.notes.basic_api.create(
+                    simple_public_object_input=note_input
+                )
+                
+                # Створюємо зв'язок між нотаткою та deal
+                if hubspot_note.id:
+                    comment.hubspot_note_id = str(hubspot_note.id)
+                    
+                    # Асоціюємо нотатку з deal
+                    hubspot_client.crm.associations.basic_api.create(
+                        from_object_type="notes",
+                        from_object_id=str(hubspot_note.id),
+                        to_object_type="deals",
+                        to_object_id=lead.hubspot_deal_id,
+                        association_type="note_to_deal"
+                    )
+                    
+                    print(f"✅ Нотатка створена в HubSpot: {hubspot_note.id}")
+            except Exception as hubspot_error:
+                app.logger.warning(f"⚠️ Помилка створення нотатки в HubSpot: {hubspot_error}")
+                # Продовжуємо - коментар все одно зберігається локально
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'comment': comment.to_dict(),
+            'message': 'Коментар успішно створено'
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Помилка створення коментаря: {e}")
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'}), 500
+
+@app.route('/api/comments/<int:comment_id>', methods=['PUT'])
+@login_required
+def update_comment(comment_id):
+    """Оновити коментар"""
+    comment = Comment.query.get_or_404(comment_id)
+    
+    # Перевірка прав доступу (тільки автор або адмін)
+    if comment.user_id != current_user.id and current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'У вас немає прав для редагування цього коментаря'}), 403
+    
+    try:
+        data = request.get_json()
+        content = data.get('content', '').strip()
+        
+        if not content:
+            return jsonify({'success': False, 'message': 'Текст коментаря не може бути порожнім'}), 400
+        
+        comment.content = content
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'comment': comment.to_dict(),
+            'message': 'Коментар успішно оновлено'
+        })
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Помилка оновлення коментаря: {e}")
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'}), 500
+
+@app.route('/api/comments/<int:comment_id>', methods=['DELETE'])
+@login_required
+def delete_comment(comment_id):
+    """Видалити коментар"""
+    comment = Comment.query.get_or_404(comment_id)
+    
+    # Перевірка прав доступу (тільки автор або адмін)
+    if comment.user_id != current_user.id and current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'У вас немає прав для видалення цього коментаря'}), 403
+    
+    try:
+        # Видаляємо нотатку з HubSpot (якщо є)
+        if comment.hubspot_note_id and hubspot_client:
+            try:
+                hubspot_client.crm.objects.notes.basic_api.archive(
+                    object_id=comment.hubspot_note_id
+                )
+                print(f"✅ Нотатка видалена з HubSpot: {comment.hubspot_note_id}")
+            except Exception as hubspot_error:
+                app.logger.warning(f"⚠️ Помилка видалення нотатки з HubSpot: {hubspot_error}")
+        
+        db.session.delete(comment)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Коментар успішно видалено'
+        })
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Помилка видалення коментаря: {e}")
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'}), 500
 
 @app.route('/lead/<int:lead_id>')
 @login_required

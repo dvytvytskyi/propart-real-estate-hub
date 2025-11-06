@@ -301,6 +301,34 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- Секція коментарів -->
+            <div class="form-container" style="margin-top: 2rem;">
+                <div class="form-header">
+                    <div class="form-title">
+                        <i class="fas fa-comments"></i>
+                        <h3>Коментарі</h3>
+                    </div>
+                </div>
+                
+                <div class="form-content">
+                    <!-- Форма додавання коментаря -->
+                    <div class="comment-form" style="margin-bottom: 2rem;">
+                        <textarea id="commentText" placeholder="Додайте коментар..." rows="3" style="width: 100%; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; font-family: inherit; resize: vertical;"></textarea>
+                        <button onclick="addComment({{ lead.id }})" class="btn btn-primary" style="margin-top: 0.5rem;">
+                            <i class="fas fa-paper-plane"></i>
+                            Додати коментар
+                        </button>
+                    </div>
+                    
+                    <!-- Список коментарів -->
+                    <div id="commentsContainer">
+                        <div style="text-align: center; padding: 2rem; color: #64748b;">
+                            <i class="fas fa-spinner fa-spin"></i> Завантаження коментарів...
+                        </div>
+                    </div>
+                </div>
+            </div>
         
         </div>
 </div>
@@ -416,6 +444,235 @@ function closeDeal(leadId) {
         }
     });
 }
+
+// ==================== COMMENT SYSTEM ====================
+
+let currentLeadId = {{ lead.id }};
+let currentUserId = {{ current_user.id }};
+let isAdmin = {{ 1 if current_user.role == 'admin' else 0 }};
+let replyingToCommentId = null;
+
+// Завантаження коментарів
+function loadComments() {
+    fetch(`/api/leads/${currentLeadId}/comments`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                renderComments(data.comments);
+            } else {
+                document.getElementById('commentsContainer').innerHTML = 
+                    `<div style="text-align: center; padding: 2rem; color: #ef4444;">
+                        <i class="fas fa-exclamation-circle"></i> ${data.message || 'Помилка завантаження коментарів'}
+                    </div>`;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading comments:', error);
+            document.getElementById('commentsContainer').innerHTML = 
+                `<div style="text-align: center; padding: 2rem; color: #ef4444;">
+                    <i class="fas fa-exclamation-circle"></i> Помилка завантаження коментарів
+                </div>`;
+        });
+}
+
+// Відображення коментарів
+function renderComments(comments) {
+    const container = document.getElementById('commentsContainer');
+    
+    if (comments.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 2rem; color: #64748b;">
+                <i class="fas fa-comment-slash"></i> Поки що немає коментарів. Будьте першим!
+            </div>`;
+        return;
+    }
+    
+    container.innerHTML = comments.map(comment => renderComment(comment)).join('');
+}
+
+// Відображення одного коментаря
+function renderComment(comment, isReply = false) {
+    const indent = isReply ? 'style="margin-left: 3rem; border-left: 3px solid #3b82f6; padding-left: 1rem;"' : '';
+    const date = new Date(comment.created_at).toLocaleString('uk-UA', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+    
+    let repliesHtml = '';
+    if (comment.replies && comment.replies.length > 0) {
+        repliesHtml = comment.replies.map(reply => renderComment(reply, true)).join('');
+    }
+    
+    return `
+        <div class="comment-item" ${indent} style="margin-bottom: 1.5rem; padding: 1rem; background: ${isReply ? '#f8fafc' : '#ffffff'}; border-radius: 0.5rem; border: 1px solid #e2e8f0;">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                <div>
+                    <strong style="color: #1e293b;">${escapeHtml(comment.user_name)}</strong>
+                    <span style="color: #64748b; font-size: 0.875rem; margin-left: 0.5rem;">${date}</span>
+                </div>
+                <div>
+                    ${comment.user_id === currentUserId || isAdmin ? `
+                        <button onclick="editComment(${comment.id})" style="background: none; border: none; color: #3b82f6; cursor: pointer; margin-right: 0.5rem;" title="Редагувати">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button onclick="deleteComment(${comment.id})" style="background: none; border: none; color: #ef4444; cursor: pointer;" title="Видалити">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+            <div class="comment-content" style="color: #334155; white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(comment.content)}</div>
+            <div style="margin-top: 0.75rem;">
+                <button onclick="replyToComment(${comment.id})" style="background: none; border: none; color: #3b82f6; cursor: pointer; font-size: 0.875rem;">
+                    <i class="fas fa-reply"></i> Відповісти
+                </button>
+            </div>
+            ${repliesHtml ? `<div style="margin-top: 1rem;">${repliesHtml}</div>` : ''}
+        </div>
+    `;
+}
+
+// Додавання коментаря
+function addComment(leadId, parentId = null) {
+    const textarea = document.getElementById('commentText');
+    const content = textarea.value.trim();
+    
+    if (!content) {
+        alert('Будь ласка, введіть текст коментаря');
+        return;
+    }
+    
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Додавання...';
+    
+    fetch(`/api/leads/${leadId}/comments`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            content: content,
+            parent_id: parentId
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        button.disabled = false;
+        button.innerHTML = originalText;
+        
+        if (data.success) {
+            textarea.value = '';
+            replyingToCommentId = null;
+            loadComments();
+            
+            if (typeof notificationSystem !== 'undefined') {
+                notificationSystem.show('Коментар успішно додано', 'success', 3000);
+            }
+        } else {
+            alert(data.message || 'Помилка додавання коментаря');
+        }
+    })
+    .catch(error => {
+        console.error('Error adding comment:', error);
+        button.disabled = false;
+        button.innerHTML = originalText;
+        alert('Помилка додавання коментаря');
+    });
+}
+
+// Відповідь на коментар
+function replyToComment(commentId) {
+    replyingToCommentId = commentId;
+    const textarea = document.getElementById('commentText');
+    textarea.focus();
+    textarea.scrollIntoView({ behavior: 'smooth' });
+}
+
+// Редагування коментаря
+function editComment(commentId) {
+    const newContent = prompt('Введіть новий текст коментаря:');
+    if (!newContent) return;
+    
+    fetch(`/api/comments/${commentId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            content: newContent
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            loadComments();
+            if (typeof notificationSystem !== 'undefined') {
+                notificationSystem.show('Коментар оновлено', 'success', 3000);
+            }
+        } else {
+            alert(data.message || 'Помилка оновлення коментаря');
+        }
+    })
+    .catch(error => {
+        console.error('Error updating comment:', error);
+        alert('Помилка оновлення коментаря');
+    });
+}
+
+// Видалення коментаря
+function deleteComment(commentId) {
+    if (!confirm('Ви впевнені, що хочете видалити цей коментар?')) {
+        return;
+    }
+    
+    fetch(`/api/comments/${commentId}`, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            loadComments();
+            if (typeof notificationSystem !== 'undefined') {
+                notificationSystem.show('Коментар видалено', 'success', 3000);
+            }
+        } else {
+            alert(data.message || 'Помилка видалення коментаря');
+        }
+    })
+    .catch(error => {
+        console.error('Error deleting comment:', error);
+        alert('Помилка видалення коментаря');
+    });
+}
+
+// Екранування HTML
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Завантаження коментарів при завантаженні сторінки
+document.addEventListener('DOMContentLoaded', function() {
+    loadComments();
+    
+    // Обробка Enter для додавання коментаря (Ctrl+Enter)
+    document.getElementById('commentText').addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.key === 'Enter') {
+            addComment(currentLeadId, replyingToCommentId);
+        }
+    });
+});
 
 </script>
 {% endblock %}

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HubSpot Pipelines</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        h1 {
+            color: #4ec9b0;
+        }
+        .pipeline {
+            background: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .pipeline-id {
+            color: #4fc1ff;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        .pipeline-label {
+            color: #ce9178;
+            font-size: 1.1em;
+            margin: 10px 0;
+        }
+        .stage {
+            background: #1e1e1e;
+            border-left: 3px solid #007acc;
+            padding: 10px;
+            margin: 10px 0;
+            margin-left: 20px;
+        }
+        .stage-id {
+            color: #9cdcfe;
+            font-family: 'Courier New', monospace;
+        }
+        .stage-label {
+            color: #dcdcaa;
+        }
+        .error {
+            color: #f48771;
+            background: #3a1d1d;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #f48771;
+        }
+        button {
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #005a9e;
+        }
+        .loading {
+            color: #4ec9b0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 HubSpot Pipelines</h1>
+    <button onclick="loadPipelines()">Оновити список</button>
+    <div id="result"></div>
+
+    <script>
+        async function loadPipelines() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p class="loading">Завантаження...</p>';
+            
+            try {
+                const response = await fetch('/api/hubspot/pipelines');
+                const data = await response.json();
+                
+                if (!data.success) {
+                    resultDiv.innerHTML = `<div class="error">❌ Помилка: ${data.message || 'Невідома помилка'}</div>`;
+                    return;
+                }
+                
+                let html = `<h2>Знайдено pipelines: ${data.total_count}</h2>`;
+                
+                data.pipelines.forEach((pipeline, idx) => {
+                    html += `
+                        <div class="pipeline">
+                            <div class="pipeline-id">${idx + 1}. Pipeline ID: ${pipeline.id}</div>
+                            <div class="pipeline-label">Label: ${pipeline.label}</div>
+                            <div>Display Order: ${pipeline.display_order || 'N/A'}</div>
+                            <div>Stages: ${pipeline.stages_count}</div>
+                            
+                            <h3>Stages:</h3>
+                            ${pipeline.stages.map(stage => `
+                                <div class="stage">
+                                    <div class="stage-label">${stage.label}</div>
+                                    <div class="stage-id">ID: ${stage.id}</div>
+                                    <div>Order: ${stage.display_order}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                });
+                
+                resultDiv.innerHTML = html;
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Помилка завантаження: ${error.message}</div>`;
+            }
+        }
+        
+        // Завантажуємо автоматично при завантаженні сторінки
+        window.onload = loadPipelines;
+    </script>
+</body>
+</html>
+
