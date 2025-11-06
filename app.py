@@ -3342,14 +3342,19 @@ def create_lead_comment(lead_id):
         if lead.hubspot_deal_id and hubspot_client:
             try:
                 from hubspot.crm.objects.notes import SimplePublicObjectInput
+                from datetime import datetime
                 
                 # Формуємо текст нотатки з інформацією про автора
                 note_body = f"[{current_user.username}]: {content}"
                 if parent_id:
                     note_body = f"Відповідь на коментар:\n{note_body}"
                 
+                # HubSpot вимагає hs_timestamp для створення нотатки
+                current_timestamp = int(datetime.now().timestamp() * 1000)  # Мілісекунди
+                
                 note_properties = {
-                    "hs_note_body": note_body
+                    "hs_note_body": note_body,
+                    "hs_timestamp": current_timestamp
                 }
                 
                 note_input = SimplePublicObjectInput(properties=note_properties)
