@@ -4307,6 +4307,56 @@ def get_hubspot_stages():
         app.logger.error(traceback.format_exc())
         return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
 
+@app.route('/api/hubspot/pipelines', methods=['GET'])
+@login_required
+def get_all_hubspot_pipelines():
+    """Отримати всі pipelines з HubSpot API"""
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Доступ тільки для адміністратора'})
+    
+    if not hubspot_client:
+        return jsonify({'success': False, 'message': 'HubSpot API не налаштований'})
+    
+    try:
+        # Отримуємо всі pipelines для deals
+        pipelines = hubspot_client.crm.pipelines.pipelines_api.get_all(object_type='deals')
+        
+        pipelines_list = []
+        for pipeline in pipelines.results:
+            stages_list = []
+            if pipeline.stages:
+                for stage in pipeline.stages:
+                    stages_list.append({
+                        'id': stage.id,
+                        'label': stage.label,
+                        'display_order': stage.display_order
+                    })
+            
+            pipelines_list.append({
+                'id': pipeline.id,
+                'label': pipeline.label,
+                'display_order': pipeline.display_order,
+                'archived': getattr(pipeline, 'archived', False),
+                'created_at': getattr(pipeline, 'created_at', None),
+                'updated_at': getattr(pipeline, 'updated_at', None),
+                'stages': stages_list,
+                'stages_count': len(stages_list)
+            })
+        
+        # Сортуємо за display_order
+        pipelines_list.sort(key=lambda x: x.get('display_order', 999))
+        
+        return jsonify({
+            'success': True,
+            'pipelines': pipelines_list,
+            'total_count': len(pipelines_list)
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Помилка отримання pipelines з HubSpot: {e}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
+
 
 # ==================== PROPERTY ROUTES ====================
 
