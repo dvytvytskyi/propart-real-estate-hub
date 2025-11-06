@@ -315,7 +315,7 @@
                     <!-- Форма додавання коментаря -->
                     <div class="comment-form" style="margin-bottom: 2rem;">
                         <textarea id="commentText" placeholder="Додайте коментар..." rows="3" style="width: 100%; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; font-family: inherit; resize: vertical;"></textarea>
-                        <button onclick="addComment({{ lead.id }})" class="btn btn-primary" style="margin-top: 0.5rem;">
+                        <button id="addCommentBtn" class="btn btn-primary" style="margin-top: 0.5rem;">
                             <i class="fas fa-paper-plane"></i>
                             Додати коментар
                         </button>
@@ -454,25 +454,47 @@ let replyingToCommentId = null;
 
 // Завантаження коментарів
 function loadComments() {
-    fetch(`/api/leads/${currentLeadId}/comments`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                renderComments(data.comments);
-            } else {
-                document.getElementById('commentsContainer').innerHTML = 
-                    `<div style="text-align: center; padding: 2rem; color: #ef4444;">
-                        <i class="fas fa-exclamation-circle"></i> ${data.message || 'Помилка завантаження коментарів'}
-                    </div>`;
-            }
-        })
-        .catch(error => {
-            console.error('Error loading comments:', error);
-            document.getElementById('commentsContainer').innerHTML = 
+    const container = document.getElementById('commentsContainer');
+    if (!container) {
+        console.error('commentsContainer not found');
+        return;
+    }
+    
+    container.innerHTML = '<div style="text-align: center; padding: 2rem; color: #64748b;"><i class="fas fa-spinner fa-spin"></i> Завантаження коментарів...</div>';
+    
+    fetch(`/api/leads/${currentLeadId}/comments`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        credentials: 'same-origin'
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.message || 'Помилка завантаження коментарів');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            renderComments(data.comments);
+        } else {
+            container.innerHTML = 
                 `<div style="text-align: center; padding: 2rem; color: #ef4444;">
-                    <i class="fas fa-exclamation-circle"></i> Помилка завантаження коментарів
+                    <i class="fas fa-exclamation-circle"></i> ${escapeHtml(data.message || 'Помилка завантаження коментарів')}
                 </div>`;
-        });
+        }
+    })
+    .catch(error => {
+        console.error('Error loading comments:', error);
+        container.innerHTML = 
+            `<div style="text-align: center; padding: 2rem; color: #ef4444;">
+                <i class="fas fa-exclamation-circle"></i> Помилка завантаження коментарів: ${escapeHtml(error.message)}
+            </div>`;
+    });
 }
 
 // Відображення коментарів
@@ -545,7 +567,7 @@ function addComment(leadId, parentId = null) {
         return;
     }
     
-    const button = event.target;
+    const button = document.getElementById('addCommentBtn');
     const originalText = button.innerHTML;
     button.disabled = true;
     button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Додавання...';
@@ -558,10 +580,17 @@ function addComment(leadId, parentId = null) {
         },
         body: JSON.stringify({
             content: content,
-            parent_id: parentId
+            parent_id: parentId || replyingToCommentId
         })
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.message || 'Помилка сервера');
+            });
+        }
+        return response.json();
+    })
     .then(data => {
         button.disabled = false;
         button.innerHTML = originalText;
@@ -573,6 +602,8 @@ function addComment(leadId, parentId = null) {
             
             if (typeof notificationSystem !== 'undefined') {
                 notificationSystem.show('Коментар успішно додано', 'success', 3000);
+            } else {
+                alert('Коментар успішно додано');
             }
         } else {
             alert(data.message || 'Помилка додавання коментаря');
@@ -582,7 +613,7 @@ function addComment(leadId, parentId = null) {
         console.error('Error adding comment:', error);
         button.disabled = false;
         button.innerHTML = originalText;
-        alert('Помилка додавання коментаря');
+        alert('Помилка додавання коментаря: ' + error.message);
     });
 }
 
@@ -664,15 +695,36 @@ function escapeHtml(text) {
 
 // Завантаження коментарів при завантаженні сторінки
 document.addEventListener('DOMContentLoaded', function() {
+    // Завантажуємо коментарі
     loadComments();
     
-    // Обробка Enter для додавання коментаря (Ctrl+Enter)
-    document.getElementById('commentText').addEventListener('keydown', function(e) {
-        if (e.ctrlKey && e.key === 'Enter') {
+    // Додаємо обробник для кнопки додавання коментаря
+    const addCommentBtn = document.getElementById('addCommentBtn');
+    if (addCommentBtn) {
+        addCommentBtn.addEventListener('click', function() {
             addComment(currentLeadId, replyingToCommentId);
-        }
-    });
+        });
+    }
+    
+    // Обробка Enter для додавання коментаря (Ctrl+Enter)
+    const commentTextarea = document.getElementById('commentText');
+    if (commentTextarea) {
+        commentTextarea.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                e.preventDefault();
+                addComment(currentLeadId, replyingToCommentId);
+            }
+        });
+    }
 });
 
+// Також завантажуємо коментарі, якщо DOM вже завантажений
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadComments);
+} else {
+    loadComments();
+}
+
 </script>
+{% endblock %}
 {% endblock %}
