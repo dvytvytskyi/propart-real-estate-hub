@@ -572,10 +572,24 @@ function addComment(leadId, parentId = null) {
         return;
     }
     
+    // Визначаємо parent_id
+    const finalParentId = parentId || replyingToCommentId || null;
+    console.log('📤 Відправка коментаря:');
+    console.log('   parentId параметр:', parentId);
+    console.log('   replyingToCommentId:', replyingToCommentId);
+    console.log('   finalParentId:', finalParentId);
+    console.log('   content:', content);
+    
     const button = document.getElementById('addCommentBtn');
     const originalText = button.innerHTML;
     button.disabled = true;
     button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Додавання...';
+    
+    const requestBody = {
+        content: content,
+        parent_id: finalParentId
+    };
+    console.log('📤 Request body:', requestBody);
     
     fetch(`/api/leads/${leadId}/comments`, {
         method: 'POST',
@@ -583,10 +597,7 @@ function addComment(leadId, parentId = null) {
             'Content-Type': 'application/json',
             'X-CSRFToken': getCsrfToken()
         },
-        body: JSON.stringify({
-            content: content,
-            parent_id: parentId || replyingToCommentId || null
-        })
+        body: JSON.stringify(requestBody)
     })
     .then(response => {
         if (!response.ok) {
