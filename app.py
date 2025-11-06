@@ -1284,13 +1284,33 @@ def sync_notes_from_hubspot(lead, only_new=True):
                     app.logger.info(f"   ⏭️ Пропускаємо нотатку {note_data['id']} - створена нашою системою")
                 elif not is_our_note:
                     # Створюємо коментар з нотатки HubSpot
-                    # Шукаємо користувача "admin" або створюємо від імені системи
-                    admin_user = User.query.filter_by(role='admin').first()
-                    if not admin_user:
-                        # Якщо немає адміна, беремо першого користувача
-                        admin_user = User.query.first()
+                    # Шукаємо користувача на основі HubSpot owner_id
+                    comment_user = None
+                    hubspot_owner_id = note_data.get('owner_id')
                     
-                    if admin_user:
+                    if hubspot_owner_id:
+                        try:
+                            # Отримуємо інформацію про owner з HubSpot
+                            owner = hubspot_client.crm.owners.owners_api.get_by_id(owner_id=hubspot_owner_id)
+                            
+                            if owner and owner.email:
+                                # Шукаємо користувача в нашій системі по email
+                                comment_user = User.query.filter_by(email=owner.email.lower()).first()
+                                
+                                if comment_user:
+                                    app.logger.info(f"   ✅ Знайдено користувача {comment_user.username} для нотатки (email: {owner.email})")
+                                else:
+                                    app.logger.info(f"   ⚠️ Користувач з email {owner.email} не знайдено в системі, використовуємо admin")
+                        except Exception as owner_error:
+                            app.logger.warning(f"   ⚠️ Помилка отримання owner з HubSpot: {owner_error}")
+                    
+                    # Якщо не знайшли користувача, використовуємо admin
+                    if not comment_user:
+                        comment_user = User.query.filter_by(role='admin').first()
+                        if not comment_user:
+                            comment_user = User.query.first()
+                    
+                    if comment_user:
                         # Парсимо дату створення
                         created_at = None
                         if note_data.get('createdate'):
