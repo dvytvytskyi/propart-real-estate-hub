@@ -1089,27 +1089,6 @@ def fetch_notes_from_hubspot(lead, after_timestamp=None):
                                 pass  # Якщо не вдалося порівняти, приймаємо нотатку
                         
                         if note_body and note_body.strip():
-                        properties = note.get('properties', {})
-                        note_body = properties.get('hs_note_body', '')
-                        timestamp = properties.get('hs_timestamp') or properties.get('hs_createdate')
-                        
-                        # Фільтруємо за timestamp, якщо вказано
-                        if after_timestamp and timestamp:
-                            try:
-                                # Порівнюємо timestamp
-                                note_ts = timestamp
-                                if isinstance(note_ts, str):
-                                    from datetime import datetime
-                                    note_dt = datetime.fromisoformat(note_ts.replace('Z', '+00:00'))
-                                    after_dt = datetime.fromisoformat(after_timestamp.replace('Z', '+00:00'))
-                                    if note_dt <= after_dt:
-                                        continue
-                                elif isinstance(note_ts, (int, float)):
-                                    if note_ts <= after_timestamp:
-                                        continue
-                            except:
-                                pass  # Якщо не вдалося порівняти, приймаємо нотатку
-                        
                             notes.append({
                                 'id': str(note.id),
                                 'body': note_body,
