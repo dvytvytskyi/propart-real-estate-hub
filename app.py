@@ -1054,7 +1054,26 @@ def fetch_notes_from_hubspot(lead, after_timestamp=None):
                 to_object_type="note"
             )
             
-            note_ids = [str(assoc.to_object_id) for assoc in associations_response.results]
+            # Отримуємо ID нотаток з асоціацій (різні версії SDK можуть мати різну структуру)
+            note_ids = []
+            for assoc in associations_response.results:
+                try:
+                    # Спробуємо різні способи отримання ID
+                    note_id = None
+                    if hasattr(assoc, 'to_object_id'):
+                        note_id = str(assoc.to_object_id)
+                    elif hasattr(assoc, 'id'):
+                        note_id = str(assoc.id)
+                    elif isinstance(assoc, dict):
+                        note_id = str(assoc.get('id') or assoc.get('to_object_id'))
+                    elif hasattr(assoc, '__dict__'):
+                        note_id = str(assoc.__dict__.get('id') or assoc.__dict__.get('to_object_id'))
+                    
+                    if note_id:
+                        note_ids.append(note_id)
+                except Exception as assoc_parse_error:
+                    app.logger.warning(f"⚠️ Помилка парсингу асоціації: {assoc_parse_error}, assoc: {assoc}")
+                    continue
             
             if not note_ids:
                 print(f"Немає нотаток, пов'язаних з deal {lead.hubspot_deal_id}")
