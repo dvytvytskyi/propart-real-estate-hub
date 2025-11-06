@@ -1083,8 +1083,48 @@ def fetch_notes_from_hubspot(lead, after_timestamp=None):
                     )
                     
                     if note.properties:
-                        note_body = note.properties.get('hs_note_body', '')
+                        note_body_raw = note.properties.get('hs_note_body', '')
                         timestamp = note.properties.get('hs_timestamp') or note.properties.get('hs_createdate')
+                        
+                        # Конвертуємо HTML в текст (HubSpot зберігає нотатки в HTML форматі)
+                        note_body = note_body_raw
+                        if note_body and ('<' in note_body and '>' in note_body):
+                            try:
+                                from html import unescape
+                                from html.parser import HTMLParser
+                                
+                                class HTMLTextExtractor(HTMLParser):
+                                    def __init__(self):
+                                        super().__init__()
+                                        self.text = []
+                                    
+                                    def handle_data(self, data):
+                                        self.text.append(data)
+                                    
+                                    def get_text(self):
+                                        return ' '.join(self.text).strip()
+                                
+                                parser = HTMLTextExtractor()
+                                parser.feed(note_body)
+                                note_body = parser.get_text()
+                                
+                                # Якщо парсер не спрацював, спробуємо простий regex
+                                if not note_body:
+                                    import re
+                                    # Видаляємо HTML теги
+                                    note_body = re.sub(r'<[^>]+>', '', note_body)
+                                    # Декодуємо HTML entities
+                                    note_body = unescape(note_body).strip()
+                            except Exception as html_error:
+                                app.logger.warning(f"⚠️ Помилка парсингу HTML нотатки: {html_error}, використовуємо оригінальний текст")
+                                # Якщо не вдалося, спробуємо простий regex
+                                try:
+                                    import re
+                                    from html import unescape
+                                    note_body = re.sub(r'<[^>]+>', '', note_body_raw)
+                                    note_body = unescape(note_body).strip()
+                                except:
+                                    note_body = note_body_raw
                         
                         # Фільтруємо за timestamp, якщо вказано
                         if after_timestamp and timestamp:
@@ -1142,8 +1182,21 @@ def fetch_notes_from_hubspot(lead, after_timestamp=None):
                                     break
                             
                             if is_associated and note.properties:
-                                note_body = note.properties.get('hs_note_body', '')
+                                note_body_raw = note.properties.get('hs_note_body', '')
                                 timestamp = note.properties.get('hs_timestamp') or note.properties.get('hs_createdate')
+                                
+                                # Конвертуємо HTML в текст
+                                note_body = note_body_raw
+                                if note_body and ('<' in note_body and '>' in note_body):
+                                    try:
+                                        from html import unescape
+                                        import re
+                                        # Видаляємо HTML теги
+                                        note_body = re.sub(r'<[^>]+>', '', note_body)
+                                        # Декодуємо HTML entities
+                                        note_body = unescape(note_body).strip()
+                                    except:
+                                        note_body = note_body_raw
                                 
                                 if note_body and note_body.strip():
                                     notes.append({
