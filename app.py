@@ -3365,9 +3365,10 @@ def create_lead_comment(lead_id):
                 }
                 
                 # Тіло запиту з асоціацією до deal
+                # Правильна назва поля: hs_note_body (з підкресленням), не hsnotebody
                 data = {
                     "properties": {
-                        "hsnotebody": note_body,
+                        "hs_note_body": note_body,  # Правильна назва поля
                         "hs_timestamp": current_timestamp
                     },
                     "associations": [{
@@ -3376,12 +3377,18 @@ def create_lead_comment(lead_id):
                         },
                         "types": [{
                             "associationCategory": "HUBSPOT_DEFINED",
-                            "associationTypeId": 214
+                            "associationTypeId": 214  # Для notes-deals
                         }]
                     }]
                 }
                 
+                app.logger.info(f"📝 Створення нотатки в HubSpot для deal {lead.hubspot_deal_id}")
+                app.logger.info(f"   Тіло запиту: {data}")
+                
                 response = requests.post(url, headers=headers, json=data)
+                
+                app.logger.info(f"📥 Відповідь HubSpot API: {response.status_code}")
+                app.logger.info(f"   Response body: {response.text[:500] if response.text else 'Empty'}")
                 
                 if response.status_code in [200, 201]:
                     response_data = response.json()
@@ -3390,6 +3397,22 @@ def create_lead_comment(lead_id):
                         comment.hubspot_note_id = str(hubspot_note_id)
                         app.logger.info(f"✅ Нотатка створена та асоційована з deal в HubSpot: {hubspot_note_id}")
                         print(f"✅ Нотатка створена та асоційована з deal в HubSpot: {hubspot_note_id}")
+                        
+                        # Додатково перевіряємо, чи асоціація дійсно створена
+                        # Інколи асоціація в одному запиті не працює, робимо окремий запит
+                        try:
+                            assoc_url = f"https://api.hubapi.com/crm/v4/objects/notes/{hubspot_note_id}/associations/deal/{lead.hubspot_deal_id}"
+                            assoc_data = [{
+                                "associationCategory": "HUBSPOT_DEFINED",
+                                "associationTypeId": 214
+                            }]
+                            assoc_response = requests.put(assoc_url, headers=headers, json=assoc_data)
+                            if assoc_response.status_code in [200, 201]:
+                                app.logger.info(f"✅ Асоціація підтверджена через окремий запит")
+                            else:
+                                app.logger.warning(f"⚠️ Асоціація не підтверджена: {assoc_response.status_code} - {assoc_response.text}")
+                        except Exception as assoc_check_error:
+                            app.logger.warning(f"⚠️ Помилка перевірки асоціації: {assoc_check_error}")
                     else:
                         app.logger.warning(f"⚠️ Нотатка створена, але ID не отримано: {response_data}")
                         print(f"⚠️ Нотатка створена, але ID не отримано")
@@ -3400,7 +3423,7 @@ def create_lead_comment(lead_id):
                     
                     # Fallback через SDK
                     note_properties = {
-                        "hsnotebody": note_body,
+                        "hs_note_body": note_body,  # Правильна назва поля
                         "hs_timestamp": current_timestamp
                     }
                     note_input = SimplePublicObjectInput(properties=note_properties)
