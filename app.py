@@ -3346,21 +3346,29 @@ def create_lead_comment(lead_id):
         db.session.flush()  # Отримуємо ID коментаря
         
         # Створюємо нотатку в HubSpot (якщо є deal_id)
+        # ВАЖЛИВО: Кожна відповідь створює ОКРЕМУ нотатку в HubSpot (не оновлює існуючу)
         if lead.hubspot_deal_id and hubspot_client:
             try:
                 from hubspot.crm.objects.notes import SimplePublicObjectInput
                 from datetime import datetime, timezone
                 
                 # Формуємо текст нотатки з інформацією про автора
+                # ВАЖЛИВО: HubSpot не підтримує тредовані нотатки, тому кожна відповідь = окрема нотатка
                 if parent_id and parent_comment:
-                    # Для відповіді додаємо інформацію про батьківський коментар
+                    # Для відповіді додаємо інформацію про батьківський коментар та його HubSpot ID
                     parent_author = parent_comment.user.username if parent_comment.user else "Unknown"
                     parent_content = parent_comment.content[:100] + ("..." if len(parent_comment.content) > 100 else "")
-                    note_body = f"Відповідь на коментар від {parent_author}:\n\"{parent_content}\"\n\n[{current_user.username}]: {content}"
-                    app.logger.info(f"📝 Створюється нотатка-відповідь на коментар {parent_id}")
+                    
+                    # Додаємо ID батьківської нотатки в HubSpot, якщо вона є
+                    parent_note_ref = ""
+                    if parent_comment.hubspot_note_id:
+                        parent_note_ref = f"\n🔗 Відповідь на нотатку HubSpot №{parent_comment.hubspot_note_id}"
+                    
+                    note_body = f"Відповідь на коментар від {parent_author}:\n\"{parent_content}\"{parent_note_ref}\n\n[{current_user.username}]: {content}"
+                    app.logger.info(f"📝 Створюється ОКРЕМА нотатка-відповідь на коментар {parent_id} (parent HubSpot note: {parent_comment.hubspot_note_id or 'немає'})")
                 else:
                     note_body = f"[{current_user.username}]: {content}"
-                    app.logger.info(f"📝 Створюється нова нотатка")
+                    app.logger.info(f"📝 Створюється нова нотатка (перший коментар)")
                 
                 # HubSpot вимагає hs_timestamp в форматі ISO8601
                 current_timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
