@@ -628,7 +628,10 @@ function addComment(leadId, parentId = null) {
 
 // Відповідь на коментар
 function replyToComment(commentId) {
+    console.log(`🔵 Відповідь на коментар ${commentId}`);
     replyingToCommentId = commentId;
+    console.log(`   replyingToCommentId встановлено: ${replyingToCommentId}`);
+    
     const textarea = document.getElementById('commentText');
     textarea.focus();
     textarea.scrollIntoView({ behavior: 'smooth' });
@@ -644,7 +647,7 @@ function replyToComment(commentId) {
         }
     }, { once: true });
     
-    console.log(`Відповідь на коментар ${commentId}, replyingToCommentId = ${replyingToCommentId}`);
+    console.log(`✅ replyingToCommentId = ${replyingToCommentId}`);
 }
 
 // Редагування коментаря
