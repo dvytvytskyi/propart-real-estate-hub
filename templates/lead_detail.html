@@ -697,7 +697,7 @@ document.addEventListener('DOMContentLoaded', function() {
         commentTextarea.addEventListener('keydown', function(e) {
             if (e.ctrlKey && e.key === 'Enter') {
                 e.preventDefault();
-                addComment(currentLeadId, replyingToCommentId);
+                addComment(currentLeadId);
             }
         });
     }
