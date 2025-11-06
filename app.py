@@ -2634,30 +2634,19 @@ def profile_stats():
             week_start = datetime.now() - timedelta(weeks=i+1)
             week_end = datetime.now() - timedelta(weeks=i)
             
-            if current_user.role == 'admin':
-                total_leads = Lead.query.filter(
-                    Lead.created_at >= week_start,
-                    Lead.created_at < week_end
-                ).count()
-                
-                converted_leads = Lead.query.filter(
-                    Lead.status == 'Угода',
-                    Lead.created_at >= week_start,
-                    Lead.created_at < week_end
-                ).count()
-            else:
-                total_leads = Lead.query.filter(
-                    Lead.agent_id == user_id,
-                    Lead.created_at >= week_start,
-                    Lead.created_at < week_end
-                ).count()
-                
-                converted_leads = Lead.query.filter(
-                    Lead.agent_id == user_id,
-                    Lead.status == 'Угода',
-                    Lead.created_at >= week_start,
-                    Lead.created_at < week_end
-                ).count()
+            # Статистика конверсії - ТІЛЬКИ для поточного користувача
+            total_leads = Lead.query.filter(
+                Lead.agent_id == user_id,
+                Lead.created_at >= week_start,
+                Lead.created_at < week_end
+            ).count()
+            
+            converted_leads = Lead.query.filter(
+                Lead.agent_id == user_id,
+                Lead.status == 'Угода',
+                Lead.created_at >= week_start,
+                Lead.created_at < week_end
+            ).count()
             
             conversion_rate = (converted_leads / total_leads * 100) if total_leads > 0 else 0
             
