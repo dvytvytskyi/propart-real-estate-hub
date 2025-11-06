@@ -3329,11 +3329,21 @@ def create_lead_comment(lead_id):
     try:
         data = request.get_json()
         content = data.get('content', '').strip()
-        parent_id = data.get('parent_id')  # ID батьківського коментаря (для відповіді)
+        parent_id_raw = data.get('parent_id')  # ID батьківського коментаря (для відповіді)
+        
+        # Конвертуємо parent_id в int або None
+        parent_id = None
+        if parent_id_raw is not None and parent_id_raw != '':
+            try:
+                parent_id = int(parent_id_raw)
+            except (ValueError, TypeError):
+                app.logger.warning(f"⚠️ Невірний формат parent_id: {parent_id_raw}, ігноруємо")
+                parent_id = None
         
         app.logger.info(f"📝 Створення коментаря для ліда {lead_id}")
         app.logger.info(f"   Content: {content[:100]}...")
-        app.logger.info(f"   Parent ID: {parent_id}")
+        app.logger.info(f"   Parent ID (raw): {parent_id_raw}, (processed): {parent_id}")
+        app.logger.info(f"   Full data: {data}")
         
         if not content:
             return jsonify({'success': False, 'message': 'Текст коментаря не може бути порожнім'}), 400
