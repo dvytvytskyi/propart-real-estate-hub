@@ -1034,6 +1034,152 @@ def fetch_activities_from_hubspot(lead):
         print(f"Помилка отримання активностей з HubSpot для ліда {lead.id}: {e}")
         return []
 
+def fetch_notes_from_hubspot(lead):
+    """Отримує нотатки з HubSpot для угоди (deal)"""
+    if not hubspot_client or not lead.hubspot_deal_id:
+        print(f"Немає HubSpot клієнта або ID угоди для ліда {lead.id}")
+        return []
+    
+    notes = []
+    
+    try:
+        from hubspot.crm.objects.notes import PublicObjectSearchRequest
+        from hubspot.crm.objects.notes import Filter, FilterGroup
+        
+        # Отримуємо нотатки, пов'язані з угодою
+        # Використовуємо search API для пошуку нотаток за асоціацією з deal
+        note_search_request = PublicObjectSearchRequest(
+            properties=["hs_note_body", "hs_timestamp", "hs_createdate"],
+            limit=100
+        )
+        
+        # Спочатку отримуємо всі нотатки, потім фільтруємо за асоціацією
+        note_results = hubspot_client.crm.objects.notes.search_api.do_search(
+            public_object_search_request=note_search_request
+        )
+        
+        if note_results.results:
+            # Отримуємо асоціації для кожної нотатки
+            for note in note_results.results:
+                try:
+                    # Перевіряємо, чи нотатка пов'язана з нашою угодою
+                    associations = hubspot_client.crm.objects.notes.associations_api.get_all(
+                        note_id=note.id,
+                        to_object_type="deal"
+                    )
+                    
+                    # Перевіряємо, чи є асоціація з нашою угодою
+                    is_associated = False
+                    for assoc in associations.results:
+                        if str(assoc.to_object_id) == str(lead.hubspot_deal_id):
+                            is_associated = True
+                            break
+                    
+                    if is_associated and note.properties:
+                        note_body = note.properties.get('hs_note_body', '')
+                        if note_body and note_body.strip():
+                            notes.append({
+                                'id': str(note.id),
+                                'body': note_body,
+                                'createdate': note.properties.get('hs_createdate') or note.properties.get('hs_timestamp'),
+                                'timestamp': note.properties.get('hs_timestamp')
+                            })
+                except Exception as assoc_error:
+                    app.logger.warning(f"⚠️ Помилка перевірки асоціації для нотатки {note.id}: {assoc_error}")
+                    continue
+        
+        print(f"Отримано {len(notes)} нотаток з HubSpot для ліда {lead.id}")
+        return notes
+        
+    except Exception as e:
+        print(f"Помилка отримання нотаток з HubSpot для ліда {lead.id}: {e}")
+        app.logger.error(f"Помилка отримання нотаток з HubSpot для ліда {lead.id}: {e}")
+        return []
+
+def sync_notes_from_hubspot(lead):
+    """Синхронізує нотатки з HubSpot в коментарі"""
+    if not hubspot_client or not lead.hubspot_deal_id:
+        return False
+    
+    try:
+        # Отримуємо нотатки з HubSpot
+        hubspot_notes = fetch_notes_from_hubspot(lead)
+        
+        synced_count = 0
+        for note_data in hubspot_notes:
+            # Перевіряємо, чи існує вже такий коментар (за hubspot_note_id)
+            existing_comment = Comment.query.filter_by(
+                hubspot_note_id=note_data['id'],
+                lead_id=lead.id
+            ).first()
+            
+            if not existing_comment:
+                # Перевіряємо, чи нотатка не створена нашою системою
+                # Наші нотатки мають формат "[username]: content" або "Відповідь на коментар..."
+                note_body = note_data['body'].strip()
+                
+                # Пропускаємо нотатки, які явно створені нашою системою
+                # (мають формат "[username]: ..." або "Відповідь на коментар...")
+                is_our_note = (
+                    note_body.startswith('[') and ']:' in note_body[:50] or
+                    'Відповідь на коментар' in note_body or
+                    'Відповідь на нотатку HubSpot' in note_body
+                )
+                
+                if not is_our_note:
+                    # Створюємо коментар з нотатки HubSpot
+                    # Шукаємо користувача "admin" або створюємо від імені системи
+                    admin_user = User.query.filter_by(role='admin').first()
+                    if not admin_user:
+                        # Якщо немає адміна, беремо першого користувача
+                        admin_user = User.query.first()
+                    
+                    if admin_user:
+                        # Парсимо дату створення
+                        created_at = None
+                        if note_data.get('createdate'):
+                            try:
+                                timestamp_ms = int(note_data['createdate'])
+                                created_at = parse_hubspot_timestamp(timestamp_ms)
+                            except (ValueError, TypeError):
+                                pass
+                        
+                        if not created_at and note_data.get('timestamp'):
+                            try:
+                                # hs_timestamp може бути в форматі ISO8601
+                                from datetime import datetime
+                                created_at = datetime.fromisoformat(note_data['timestamp'].replace('Z', '+00:00'))
+                            except (ValueError, TypeError):
+                                pass
+                        
+                        new_comment = Comment(
+                            lead_id=lead.id,
+                            user_id=admin_user.id,
+                            parent_id=None,  # Нотатки з HubSpot - це завжди кореневі коментарі
+                            content=note_body,
+                            hubspot_note_id=note_data['id']
+                        )
+                        
+                        if created_at:
+                            new_comment.created_at = created_at
+                        
+                        db.session.add(new_comment)
+                        synced_count += 1
+                        app.logger.info(f"✅ Синхронізовано нотатку HubSpot {note_data['id']} в коментар для ліда {lead.id}")
+        
+        if synced_count > 0:
+            db.session.commit()
+            print(f"Синхронізовано {synced_count} нотаток з HubSpot в коментарі для ліда {lead.id}")
+            app.logger.info(f"Синхронізовано {synced_count} нотаток з HubSpot в коментарі для ліда {lead.id}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Помилка синхронізації нотаток для ліда {lead.id}: {e}")
+        app.logger.error(f"Помилка синхронізації нотаток для ліда {lead.id}: {e}")
+        db.session.rollback()
+        return False
+
 def sync_activities_from_hubspot(lead):
     """Синхронізує активності з HubSpot в локальну БД"""
     if not hubspot_client or not lead.hubspot_contact_id:
@@ -1504,6 +1650,9 @@ def sync_lead_from_hubspot(lead):
         
         # Синхронізуємо активності з HubSpot
         sync_activities_from_hubspot(lead)
+        
+        # Синхронізуємо нотатки з HubSpot в коментарі
+        sync_notes_from_hubspot(lead)
         
         # Оновлюємо час останньої синхронізації
         lead.last_sync_at = get_ukraine_time()
