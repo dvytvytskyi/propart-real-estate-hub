@@ -3511,42 +3511,18 @@ def get_lead_comments(lead_id):
         return jsonify({'success': False, 'message': 'У вас немає прав для перегляду цього ліда'}), 403
     
     try:
-        # Отримуємо всі коментарі для ліда
+        # Отримуємо всі коментарі для ліда (без ієрархії - просто список)
         all_comments = Comment.query.filter_by(lead_id=lead_id).order_by(Comment.created_at.asc()).all()
         
-        # Створюємо структуру для threaded comments
-        comments_dict = {}
-        root_comments = []
+        # Просто повертаємо список коментарів без ієрархії
+        comments_list = [comment.to_dict() for comment in all_comments]
         
-        # Спочатку створюємо всі коментарі в словнику
-        for comment in all_comments:
-            comment_data = comment.to_dict()
-            comment_data['replies'] = []
-            comments_dict[comment.id] = comment_data
-        
-        # Потім додаємо відповіді до батьківських коментарів
-        for comment in all_comments:
-            comment_data = comments_dict[comment.id]
-            
-            if comment.parent_id is None:
-                # Це кореневий коментар
-                root_comments.append(comment_data)
-            else:
-                # Це відповідь - додаємо до батьківського коментаря
-                if comment.parent_id in comments_dict:
-                    comments_dict[comment.parent_id]['replies'].append(comment_data)
-                else:
-                    # Якщо батьківський коментар не знайдено (не повинно бути, але на всяк випадок)
-                    app.logger.warning(f"⚠️ Батьківський коментар {comment.parent_id} не знайдено для коментаря {comment.id}")
-                    # Додаємо як кореневий, щоб не втратити
-                    root_comments.append(comment_data)
-        
-        app.logger.info(f"📊 Завантажено {len(all_comments)} коментарів, з них {len(root_comments)} кореневих")
+        app.logger.info(f"📊 Завантажено {len(comments_list)} коментарів")
         
         return jsonify({
             'success': True,
-            'comments': root_comments,
-            'total_count': len(all_comments)
+            'comments': comments_list,
+            'total_count': len(comments_list)
         })
     except Exception as e:
         app.logger.error(f"Помилка отримання коментарів: {e}")
@@ -3565,39 +3541,18 @@ def create_lead_comment(lead_id):
     try:
         data = request.get_json()
         content = data.get('content', '').strip()
-        parent_id_raw = data.get('parent_id')  # ID батьківського коментаря (для відповіді)
-        
-        # Конвертуємо parent_id в int або None
-        parent_id = None
-        if parent_id_raw is not None and parent_id_raw != '':
-            try:
-                parent_id = int(parent_id_raw)
-            except (ValueError, TypeError):
-                app.logger.warning(f"⚠️ Невірний формат parent_id: {parent_id_raw}, ігноруємо")
-                parent_id = None
         
         app.logger.info(f"📝 Створення коментаря для ліда {lead_id}")
         app.logger.info(f"   Content: {content[:100]}...")
-        app.logger.info(f"   Parent ID (raw): {parent_id_raw}, (processed): {parent_id}")
-        app.logger.info(f"   Full data: {data}")
         
         if not content:
             return jsonify({'success': False, 'message': 'Текст коментаря не може бути порожнім'}), 400
         
-        # Перевірка, чи існує батьківський коментар (якщо вказано)
-        parent_comment = None
-        if parent_id:
-            parent_comment = Comment.query.filter_by(id=parent_id, lead_id=lead_id).first()
-            if not parent_comment:
-                app.logger.warning(f"⚠️ Батьківський коментар {parent_id} не знайдено для ліда {lead_id}")
-                return jsonify({'success': False, 'message': 'Батьківський коментар не знайдено'}), 404
-            app.logger.info(f"✅ Знайдено батьківський коментар: {parent_comment.id} - {parent_comment.content[:50]}...")
-        
-        # Створюємо коментар
+        # Створюємо коментар (завжди без parent_id - плоскі коментарі)
         comment = Comment(
             lead_id=lead_id,
             user_id=current_user.id,
-            parent_id=parent_id,
+            parent_id=None,  # Завжди None - коментарі без ієрархії
             content=content
         )
         db.session.add(comment)
@@ -3611,22 +3566,9 @@ def create_lead_comment(lead_id):
                 from datetime import datetime, timezone
                 
                 # Формуємо текст нотатки з інформацією про автора
-                # ВАЖЛИВО: HubSpot не підтримує тредовані нотатки, тому кожна відповідь = окрема нотатка
-                if parent_id and parent_comment:
-                    # Для відповіді додаємо інформацію про батьківський коментар та його HubSpot ID
-                    parent_author = parent_comment.user.username if parent_comment.user else "Unknown"
-                    parent_content = parent_comment.content[:100] + ("..." if len(parent_comment.content) > 100 else "")
-                    
-                    # Додаємо ID батьківської нотатки в HubSpot, якщо вона є
-                    parent_note_ref = ""
-                    if parent_comment.hubspot_note_id:
-                        parent_note_ref = f"\n🔗 Відповідь на нотатку HubSpot №{parent_comment.hubspot_note_id}"
-                    
-                    note_body = f"Відповідь на коментар від {parent_author}:\n\"{parent_content}\"{parent_note_ref}\n\n[{current_user.username}]: {content}"
-                    app.logger.info(f"📝 Створюється ОКРЕМА нотатка-відповідь на коментар {parent_id} (parent HubSpot note: {parent_comment.hubspot_note_id or 'немає'})")
-                else:
-                    note_body = f"[{current_user.username}]: {content}"
-                    app.logger.info(f"📝 Створюється нова нотатка (перший коментар)")
+                # ВАЖЛИВО: HubSpot не підтримує тредовані нотатки, тому кожен коментар = окрема нотатка
+                note_body = f"[{current_user.username}]: {content}"
+                app.logger.info(f"📝 Створюється нотатка в HubSpot для коментаря")
                 
                 # HubSpot вимагає hs_timestamp в форматі ISO8601
                 current_timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -3661,18 +3603,13 @@ def create_lead_comment(lead_id):
                     }]
                 }
                 
-                app.logger.info(f"📝 Створення ОКРЕМОЇ нотатки в HubSpot для deal {lead.hubspot_deal_id}")
-                app.logger.info(f"   Тип: {'ВІДПОВІДЬ' if parent_id else 'НОВИЙ КОМЕНТАР'}")
+                app.logger.info(f"📝 Створення нотатки в HubSpot для deal {lead.hubspot_deal_id}")
                 app.logger.info(f"   Тіло запиту: {data}")
                 
                 response = requests.post(url, headers=headers, json=data)
                 
                 app.logger.info(f"📥 Відповідь HubSpot API: {response.status_code}")
                 app.logger.info(f"   Response body: {response.text[:500] if response.text else 'Empty'}")
-                
-                # Додаткова перевірка для відповідей
-                if parent_id:
-                    app.logger.info(f"   ⚠️ Це відповідь на коментар {parent_id}, має створитися ОКРЕМА нотатка")
                 
                 if response.status_code in [200, 201]:
                     response_data = response.json()

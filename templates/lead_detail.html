@@ -450,7 +450,7 @@ function closeDeal(leadId) {
 let currentLeadId = {{ lead.id }};
 let currentUserId = {{ current_user.id }};
 let isAdmin = {{ 1 if current_user.role == 'admin' else 0 }};
-let replyingToCommentId = null;
+// Прибрано функціонал відповідей - коментарі тепер плоскі
 
 // Завантаження коментарів
 function loadComments() {
@@ -514,9 +514,8 @@ function renderComments(comments) {
     container.innerHTML = comments.map(comment => renderComment(comment)).join('');
 }
 
-// Відображення одного коментаря
-function renderComment(comment, isReply = false) {
-    const indent = isReply ? 'style="margin-left: 3rem; border-left: 3px solid #3b82f6; padding-left: 1rem;"' : '';
+// Відображення одного коментаря (без ієрархії)
+function renderComment(comment) {
     const date = new Date(comment.created_at).toLocaleString('uk-UA', {
         day: '2-digit',
         month: '2-digit',
@@ -525,16 +524,8 @@ function renderComment(comment, isReply = false) {
         minute: '2-digit'
     });
     
-    let repliesHtml = '';
-    if (comment.replies && comment.replies.length > 0) {
-        console.log(`📝 Коментар ${comment.id} має ${comment.replies.length} відповідей:`, comment.replies);
-        repliesHtml = comment.replies.map(reply => renderComment(reply, true)).join('');
-    } else if (comment.replies_count > 0) {
-        console.warn(`⚠️ Коментар ${comment.id} має replies_count=${comment.replies_count}, але replies порожній`);
-    }
-    
     return `
-        <div class="comment-item" ${indent} style="margin-bottom: 1.5rem; padding: 1rem; background: ${isReply ? '#f8fafc' : '#ffffff'}; border-radius: 0.5rem; border: 1px solid #e2e8f0;">
+        <div class="comment-item" style="margin-bottom: 1.5rem; padding: 1rem; background: #ffffff; border-radius: 0.5rem; border: 1px solid #e2e8f0;">
             <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
                 <div>
                     <strong style="color: #1e293b;">${escapeHtml(comment.user_name)}</strong>
@@ -552,18 +543,12 @@ function renderComment(comment, isReply = false) {
                 </div>
             </div>
             <div class="comment-content" style="color: #334155; white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(comment.content)}</div>
-            <div style="margin-top: 0.75rem;">
-                <button onclick="replyToComment(${comment.id})" style="background: none; border: none; color: #3b82f6; cursor: pointer; font-size: 0.875rem;">
-                    <i class="fas fa-reply"></i> Відповісти
-                </button>
-            </div>
-            ${repliesHtml ? `<div style="margin-top: 1rem;">${repliesHtml}</div>` : ''}
         </div>
     `;
 }
 
-// Додавання коментаря
-function addComment(leadId, parentId = null) {
+// Додавання коментаря (без ієрархії)
+function addComment(leadId) {
     const textarea = document.getElementById('commentText');
     const content = textarea.value.trim();
     
@@ -572,24 +557,14 @@ function addComment(leadId, parentId = null) {
         return;
     }
     
-    // Визначаємо parent_id
-    const finalParentId = parentId || replyingToCommentId || null;
-    console.log('📤 Відправка коментаря:');
-    console.log('   parentId параметр:', parentId);
-    console.log('   replyingToCommentId:', replyingToCommentId);
-    console.log('   finalParentId:', finalParentId);
-    console.log('   content:', content);
-    
     const button = document.getElementById('addCommentBtn');
     const originalText = button.innerHTML;
     button.disabled = true;
     button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Додавання...';
     
     const requestBody = {
-        content: content,
-        parent_id: finalParentId
+        content: content
     };
-    console.log('📤 Request body:', requestBody);
     
     fetch(`/api/leads/${leadId}/comments`, {
         method: 'POST',
@@ -614,11 +589,7 @@ function addComment(leadId, parentId = null) {
         if (data.success) {
             textarea.value = '';
             textarea.placeholder = 'Додайте коментар...';
-            const previousReplyingId = replyingToCommentId;
-            replyingToCommentId = null;
             loadComments();
-            
-            console.log(`Коментар створено успішно. Було parent_id: ${previousReplyingId}`);
             
             if (typeof notificationSystem !== 'undefined') {
                 notificationSystem.show('Коментар успішно додано', 'success', 3000);
@@ -637,29 +608,7 @@ function addComment(leadId, parentId = null) {
     });
 }
 
-// Відповідь на коментар
-function replyToComment(commentId) {
-    console.log(`🔵 Відповідь на коментар ${commentId}`);
-    replyingToCommentId = commentId;
-    console.log(`   replyingToCommentId встановлено: ${replyingToCommentId}`);
-    
-    const textarea = document.getElementById('commentText');
-    textarea.focus();
-    textarea.scrollIntoView({ behavior: 'smooth' });
-    
-    // Додаємо індикатор, що це відповідь
-    const placeholder = textarea.placeholder;
-    textarea.placeholder = `Відповідь на коментар #${commentId}...`;
-    
-    // Повертаємо placeholder при втраті фокусу, якщо поле порожнє
-    textarea.addEventListener('blur', function() {
-        if (!textarea.value.trim()) {
-            textarea.placeholder = placeholder;
-        }
-    }, { once: true });
-    
-    console.log(`✅ replyingToCommentId = ${replyingToCommentId}`);
-}
+// Функціонал відповідей прибрано - коментарі тепер плоскі
 
 // Редагування коментаря
 function editComment(commentId) {
@@ -738,7 +687,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const addCommentBtn = document.getElementById('addCommentBtn');
     if (addCommentBtn) {
         addCommentBtn.addEventListener('click', function() {
-            addComment(currentLeadId, replyingToCommentId);
+            addComment(currentLeadId);
         });
     }
     
