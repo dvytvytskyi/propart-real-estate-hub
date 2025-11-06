@@ -1045,58 +1045,50 @@ def fetch_notes_from_hubspot(lead, after_timestamp=None):
     try:
         import requests
         
-        # Використовуємо правильний API endpoint з associations параметром
-        url = f"https://api.hubapi.com/crm/v3/objects/notes"
-        headers = {
-            "Authorization": f"Bearer {HUBSPOT_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        params = {
-            "associations": f"deal:{lead.hubspot_deal_id}",
-            "limit": 100,
-            "properties": "hs_note_body,hs_timestamp,hs_createdate",
-            "sort": "hs_timestamp"  # Сортуємо за часом створення
-        }
-        
-        # Якщо вказано after_timestamp, додаємо фільтр (якщо API підтримує)
-        # Але HubSpot API не підтримує after для notes напряму, тому фільтруємо в коді
-        
-        response = requests.get(url, headers=headers, params=params)
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        if 'results' in data:
-            for note in data['results']:
+        # Використовуємо правильний підхід: отримуємо нотатки через associations API
+        # Спочатку отримуємо всі нотатки, пов'язані з deal через associations endpoint
+        try:
+            # Використовуємо SDK для отримання асоційованих нотаток
+            associations_response = hubspot_client.crm.deals.associations_api.get_all(
+                deal_id=lead.hubspot_deal_id,
+                to_object_type="note"
+            )
+            
+            note_ids = [str(assoc.to_object_id) for assoc in associations_response.results]
+            
+            if not note_ids:
+                print(f"Немає нотаток, пов'язаних з deal {lead.hubspot_deal_id}")
+                return []
+            
+            # Отримуємо деталі нотаток
+            for note_id in note_ids:
                 try:
-                    # Перевіряємо, чи нотатка дійсно пов'язана з нашою угодою
-                    # (API може повертати всі нотатки, але associations вказує на зв'язки)
-                    associations = note.get('associations', {})
-                    deal_associations = associations.get('deal', {}).get('results', [])
+                    note = hubspot_client.crm.objects.notes.basic_api.get_by_id(
+                        note_id=note_id,
+                        properties=["hs_note_body", "hs_timestamp", "hs_createdate"]
+                    )
                     
-                    is_associated = False
-                    for assoc in deal_associations:
-                        if str(assoc.get('id')) == str(lead.hubspot_deal_id):
-                            is_associated = True
-                            break
-                    
-                    # Якщо associations не в response, перевіряємо через окремий запит
-                    if not is_associated and deal_associations:
-                        # Спробуємо перевірити через SDK
-                        try:
-                            note_associations = hubspot_client.crm.objects.notes.associations_api.get_all(
-                                note_id=note['id'],
-                                to_object_type="deal"
-                            )
-                            for assoc in note_associations.results:
-                                if str(assoc.to_object_id) == str(lead.hubspot_deal_id):
-                                    is_associated = True
-                                    break
-                        except:
-                            pass
-                    
-                    if is_associated or not deal_associations:  # Якщо associations порожні, приймаємо нотатку
+                    if note.properties:
+                        note_body = note.properties.get('hs_note_body', '')
+                        timestamp = note.properties.get('hs_timestamp') or note.properties.get('hs_createdate')
+                        
+                        # Фільтруємо за timestamp, якщо вказано
+                        if after_timestamp and timestamp:
+                            try:
+                                from datetime import datetime
+                                note_ts = timestamp
+                                if isinstance(note_ts, str):
+                                    note_dt = datetime.fromisoformat(note_ts.replace('Z', '+00:00'))
+                                    after_dt = datetime.fromisoformat(after_timestamp.replace('Z', '+00:00'))
+                                    if note_dt <= after_dt:
+                                        continue
+                                elif isinstance(note_ts, (int, float)):
+                                    if note_ts <= after_timestamp:
+                                        continue
+                            except:
+                                pass  # Якщо не вдалося порівняти, приймаємо нотатку
+                        
+                        if note_body and note_body.strip():
                         properties = note.get('properties', {})
                         note_body = properties.get('hs_note_body', '')
                         timestamp = properties.get('hs_timestamp') or properties.get('hs_createdate')
@@ -1118,16 +1110,59 @@ def fetch_notes_from_hubspot(lead, after_timestamp=None):
                             except:
                                 pass  # Якщо не вдалося порівняти, приймаємо нотатку
                         
-                        if note_body and note_body.strip():
                             notes.append({
-                                'id': str(note['id']),
+                                'id': str(note.id),
                                 'body': note_body,
-                                'createdate': properties.get('hs_createdate'),
+                                'createdate': note.properties.get('hs_createdate'),
                                 'timestamp': timestamp
                             })
                 except Exception as note_error:
-                    app.logger.warning(f"⚠️ Помилка обробки нотатки {note.get('id', 'unknown')}: {note_error}")
+                    app.logger.warning(f"⚠️ Помилка обробки нотатки {note_id}: {note_error}")
                     continue
+                    
+        except Exception as assoc_error:
+            app.logger.warning(f"⚠️ Помилка отримання асоціацій нотаток для deal {lead.hubspot_deal_id}: {assoc_error}")
+            # Fallback: спробуємо через search API (без associations параметру)
+            try:
+                from hubspot.crm.objects.notes import PublicObjectSearchRequest
+                note_search_request = PublicObjectSearchRequest(
+                    properties=["hs_note_body", "hs_timestamp", "hs_createdate"],
+                    limit=100
+                )
+                note_results = hubspot_client.crm.objects.notes.search_api.do_search(
+                    public_object_search_request=note_search_request
+                )
+                
+                if note_results.results:
+                    for note in note_results.results:
+                        try:
+                            # Перевіряємо асоціацію через окремий запит
+                            note_associations = hubspot_client.crm.objects.notes.associations_api.get_all(
+                                note_id=note.id,
+                                to_object_type="deal"
+                            )
+                            
+                            is_associated = False
+                            for assoc in note_associations.results:
+                                if str(assoc.to_object_id) == str(lead.hubspot_deal_id):
+                                    is_associated = True
+                                    break
+                            
+                            if is_associated and note.properties:
+                                note_body = note.properties.get('hs_note_body', '')
+                                timestamp = note.properties.get('hs_timestamp') or note.properties.get('hs_createdate')
+                                
+                                if note_body and note_body.strip():
+                                    notes.append({
+                                        'id': str(note.id),
+                                        'body': note_body,
+                                        'createdate': note.properties.get('hs_createdate'),
+                                        'timestamp': timestamp
+                                    })
+                        except:
+                            continue
+            except Exception as fallback_error:
+                app.logger.error(f"⚠️ Помилка fallback отримання нотаток: {fallback_error}")
         
         print(f"Отримано {len(notes)} нотаток з HubSpot для ліда {lead.id}")
         return notes
