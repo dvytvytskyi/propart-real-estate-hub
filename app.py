@@ -1034,8 +1034,8 @@ def fetch_activities_from_hubspot(lead):
         print(f"Помилка отримання активностей з HubSpot для ліда {lead.id}: {e}")
         return []
 
-def fetch_notes_from_hubspot(lead):
-    """Отримує нотатки з HubSpot для угоди (deal)"""
+def fetch_notes_from_hubspot(lead, after_timestamp=None):
+    """Отримує нотатки з HubSpot для угоди (deal) через правильний API endpoint"""
     if not hubspot_client or not lead.hubspot_deal_id:
         print(f"Немає HubSpot клієнта або ID угоди для ліда {lead.id}")
         return []
@@ -1043,49 +1043,90 @@ def fetch_notes_from_hubspot(lead):
     notes = []
     
     try:
-        from hubspot.crm.objects.notes import PublicObjectSearchRequest
-        from hubspot.crm.objects.notes import Filter, FilterGroup
+        import requests
         
-        # Отримуємо нотатки, пов'язані з угодою
-        # Використовуємо search API для пошуку нотаток за асоціацією з deal
-        note_search_request = PublicObjectSearchRequest(
-            properties=["hs_note_body", "hs_timestamp", "hs_createdate"],
-            limit=100
-        )
+        # Використовуємо правильний API endpoint з associations параметром
+        url = f"https://api.hubapi.com/crm/v3/objects/notes"
+        headers = {
+            "Authorization": f"Bearer {HUBSPOT_API_KEY}",
+            "Content-Type": "application/json"
+        }
         
-        # Спочатку отримуємо всі нотатки, потім фільтруємо за асоціацією
-        note_results = hubspot_client.crm.objects.notes.search_api.do_search(
-            public_object_search_request=note_search_request
-        )
+        params = {
+            "associations": f"deal:{lead.hubspot_deal_id}",
+            "limit": 100,
+            "properties": "hs_note_body,hs_timestamp,hs_createdate",
+            "sort": "hs_timestamp"  # Сортуємо за часом створення
+        }
         
-        if note_results.results:
-            # Отримуємо асоціації для кожної нотатки
-            for note in note_results.results:
+        # Якщо вказано after_timestamp, додаємо фільтр (якщо API підтримує)
+        # Але HubSpot API не підтримує after для notes напряму, тому фільтруємо в коді
+        
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        if 'results' in data:
+            for note in data['results']:
                 try:
-                    # Перевіряємо, чи нотатка пов'язана з нашою угодою
-                    associations = hubspot_client.crm.objects.notes.associations_api.get_all(
-                        note_id=note.id,
-                        to_object_type="deal"
-                    )
+                    # Перевіряємо, чи нотатка дійсно пов'язана з нашою угодою
+                    # (API може повертати всі нотатки, але associations вказує на зв'язки)
+                    associations = note.get('associations', {})
+                    deal_associations = associations.get('deal', {}).get('results', [])
                     
-                    # Перевіряємо, чи є асоціація з нашою угодою
                     is_associated = False
-                    for assoc in associations.results:
-                        if str(assoc.to_object_id) == str(lead.hubspot_deal_id):
+                    for assoc in deal_associations:
+                        if str(assoc.get('id')) == str(lead.hubspot_deal_id):
                             is_associated = True
                             break
                     
-                    if is_associated and note.properties:
-                        note_body = note.properties.get('hs_note_body', '')
+                    # Якщо associations не в response, перевіряємо через окремий запит
+                    if not is_associated and deal_associations:
+                        # Спробуємо перевірити через SDK
+                        try:
+                            note_associations = hubspot_client.crm.objects.notes.associations_api.get_all(
+                                note_id=note['id'],
+                                to_object_type="deal"
+                            )
+                            for assoc in note_associations.results:
+                                if str(assoc.to_object_id) == str(lead.hubspot_deal_id):
+                                    is_associated = True
+                                    break
+                        except:
+                            pass
+                    
+                    if is_associated or not deal_associations:  # Якщо associations порожні, приймаємо нотатку
+                        properties = note.get('properties', {})
+                        note_body = properties.get('hs_note_body', '')
+                        timestamp = properties.get('hs_timestamp') or properties.get('hs_createdate')
+                        
+                        # Фільтруємо за timestamp, якщо вказано
+                        if after_timestamp and timestamp:
+                            try:
+                                # Порівнюємо timestamp
+                                note_ts = timestamp
+                                if isinstance(note_ts, str):
+                                    from datetime import datetime
+                                    note_dt = datetime.fromisoformat(note_ts.replace('Z', '+00:00'))
+                                    after_dt = datetime.fromisoformat(after_timestamp.replace('Z', '+00:00'))
+                                    if note_dt <= after_dt:
+                                        continue
+                                elif isinstance(note_ts, (int, float)):
+                                    if note_ts <= after_timestamp:
+                                        continue
+                            except:
+                                pass  # Якщо не вдалося порівняти, приймаємо нотатку
+                        
                         if note_body and note_body.strip():
                             notes.append({
-                                'id': str(note.id),
+                                'id': str(note['id']),
                                 'body': note_body,
-                                'createdate': note.properties.get('hs_createdate') or note.properties.get('hs_timestamp'),
-                                'timestamp': note.properties.get('hs_timestamp')
+                                'createdate': properties.get('hs_createdate'),
+                                'timestamp': timestamp
                             })
-                except Exception as assoc_error:
-                    app.logger.warning(f"⚠️ Помилка перевірки асоціації для нотатки {note.id}: {assoc_error}")
+                except Exception as note_error:
+                    app.logger.warning(f"⚠️ Помилка обробки нотатки {note.get('id', 'unknown')}: {note_error}")
                     continue
         
         print(f"Отримано {len(notes)} нотаток з HubSpot для ліда {lead.id}")
@@ -1096,14 +1137,28 @@ def fetch_notes_from_hubspot(lead):
         app.logger.error(f"Помилка отримання нотаток з HubSpot для ліда {lead.id}: {e}")
         return []
 
-def sync_notes_from_hubspot(lead):
+def sync_notes_from_hubspot(lead, only_new=True):
     """Синхронізує нотатки з HubSpot в коментарі"""
     if not hubspot_client or not lead.hubspot_deal_id:
         return False
     
     try:
+        # Визначаємо останній timestamp синхронізованої нотатки
+        after_timestamp = None
+        if only_new:
+            # Знаходимо останній синхронізований коментар з HubSpot
+            last_synced_comment = Comment.query.filter_by(
+                lead_id=lead.id
+            ).filter(
+                Comment.hubspot_note_id.isnot(None)
+            ).order_by(Comment.created_at.desc()).first()
+            
+            if last_synced_comment and last_synced_comment.created_at:
+                # Конвертуємо в ISO8601 формат для порівняння
+                after_timestamp = last_synced_comment.created_at.isoformat()
+        
         # Отримуємо нотатки з HubSpot
-        hubspot_notes = fetch_notes_from_hubspot(lead)
+        hubspot_notes = fetch_notes_from_hubspot(lead, after_timestamp=after_timestamp)
         
         synced_count = 0
         for note_data in hubspot_notes:
@@ -2234,6 +2289,33 @@ def fetch_all_contacts_from_hubspot():
         db.session.rollback()
         return {'created': 0, 'updated': 0, 'errors': 1, 'total_processed': 0}
 
+def sync_notes_polling():
+    """Періодична перевірка нових нотаток з HubSpot для всіх лідов"""
+    if not hubspot_client:
+        return
+    
+    try:
+        # Отримуємо всі ліді з hubspot_deal_id
+        leads_with_deals = Lead.query.filter(
+            Lead.hubspot_deal_id.isnot(None)
+        ).all()
+        
+        synced_count = 0
+        for lead in leads_with_deals:
+            try:
+                # Синхронізуємо тільки нові нотатки
+                if sync_notes_from_hubspot(lead, only_new=True):
+                    synced_count += 1
+            except Exception as lead_error:
+                app.logger.warning(f"⚠️ Помилка синхронізації нотаток для ліда {lead.id}: {lead_error}")
+                continue
+        
+        if synced_count > 0:
+            app.logger.info(f"📝 Синхронізовано нотатки для {synced_count} лідов")
+        
+    except Exception as e:
+        app.logger.error(f"❌ Помилка polling нотаток: {e}")
+
 def background_sync_task():
     """Фонова задача для автоматичної синхронізації лідів"""
     print("🔄 Запущено фонову синхронізацію")
@@ -2270,6 +2352,11 @@ def background_sync_task():
                     print("⏰ Початок автоматичної синхронізації існуючих лідів...")
                     sync_all_leads_from_hubspot()
                     print("✅ Автоматична синхронізація завершена")
+                    
+                    # Періодична перевірка нових нотаток з HubSpot (polling)
+                    print("📝 Перевірка нових нотаток з HubSpot...")
+                    sync_notes_polling()
+                    print("✅ Перевірка нотаток завершена")
                 else:
                     print("⚠️ HubSpot API не налаштований, синхронізація пропущена")
         except Exception as e:
