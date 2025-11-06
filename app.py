@@ -1203,11 +1203,15 @@ def fetch_notes_from_hubspot(lead, after_timestamp=None):
                                         note_body = note_body_raw
                                 
                                 if note_body and note_body.strip():
+                                    # Отримуємо owner_id нотатки (автор)
+                                    owner_id = note.properties.get('hubspot_owner_id')
+                                    
                                     notes.append({
                                         'id': str(note.id),
                                         'body': note_body,
                                         'createdate': note.properties.get('hs_createdate'),
-                                        'timestamp': timestamp
+                                        'timestamp': timestamp,
+                                        'owner_id': owner_id  # ID автора в HubSpot
                                     })
                         except:
                             continue
