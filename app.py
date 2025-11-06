@@ -1163,7 +1163,7 @@ def fetch_notes_from_hubspot(lead, after_timestamp=None):
             try:
                 from hubspot.crm.objects.notes import PublicObjectSearchRequest
                 note_search_request = PublicObjectSearchRequest(
-                    properties=["hs_note_body", "hs_timestamp", "hs_createdate"],
+                    properties=["hs_note_body", "hs_timestamp", "hs_createdate", "hubspot_owner_id"],
                     limit=100
                 )
                 note_results = hubspot_client.crm.objects.notes.search_api.do_search(
