@@ -1079,7 +1079,7 @@ def fetch_notes_from_hubspot(lead, after_timestamp=None):
                 try:
                     note = hubspot_client.crm.objects.notes.basic_api.get_by_id(
                         note_id=note_id,
-                        properties=["hs_note_body", "hs_timestamp", "hs_createdate"]
+                        properties=["hs_note_body", "hs_timestamp", "hs_createdate", "hubspot_owner_id"]
                     )
                     
                     if note.properties:
@@ -1143,11 +1143,15 @@ def fetch_notes_from_hubspot(lead, after_timestamp=None):
                                 pass  # Якщо не вдалося порівняти, приймаємо нотатку
                         
                         if note_body and note_body.strip():
+                            # Отримуємо owner_id нотатки (автор)
+                            owner_id = note.properties.get('hubspot_owner_id')
+                            
                             notes.append({
                                 'id': str(note.id),
                                 'body': note_body,
                                 'createdate': note.properties.get('hs_createdate'),
-                                'timestamp': timestamp
+                                'timestamp': timestamp,
+                                'owner_id': owner_id  # ID автора в HubSpot
                             })
                 except Exception as note_error:
                     app.logger.warning(f"⚠️ Помилка обробки нотатки {note_id}: {note_error}")
@@ -1306,7 +1310,7 @@ def sync_notes_from_hubspot(lead, only_new=True):
                         
                         new_comment = Comment(
                             lead_id=lead.id,
-                            user_id=admin_user.id,
+                            user_id=comment_user.id,
                             parent_id=None,  # Нотатки з HubSpot - це завжди кореневі коментарі
                             content=note_body,
                             hubspot_note_id=note_data['id']
