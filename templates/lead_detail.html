@@ -580,7 +580,7 @@ function addComment(leadId, parentId = null) {
         },
         body: JSON.stringify({
             content: content,
-            parent_id: parentId || replyingToCommentId
+            parent_id: parentId || replyingToCommentId || null
         })
     })
     .then(response => {
@@ -597,8 +597,12 @@ function addComment(leadId, parentId = null) {
         
         if (data.success) {
             textarea.value = '';
+            textarea.placeholder = 'Додайте коментар...';
+            const previousReplyingId = replyingToCommentId;
             replyingToCommentId = null;
             loadComments();
+            
+            console.log(`Коментар створено успішно. Було parent_id: ${previousReplyingId}`);
             
             if (typeof notificationSystem !== 'undefined') {
                 notificationSystem.show('Коментар успішно додано', 'success', 3000);
@@ -623,6 +627,19 @@ function replyToComment(commentId) {
     const textarea = document.getElementById('commentText');
     textarea.focus();
     textarea.scrollIntoView({ behavior: 'smooth' });
+    
+    // Додаємо індикатор, що це відповідь
+    const placeholder = textarea.placeholder;
+    textarea.placeholder = `Відповідь на коментар #${commentId}...`;
+    
+    // Повертаємо placeholder при втраті фокусу, якщо поле порожнє
+    textarea.addEventListener('blur', function() {
+        if (!textarea.value.trim()) {
+            textarea.placeholder = placeholder;
+        }
+    }, { once: true });
+    
+    console.log(`Відповідь на коментар ${commentId}, replyingToCommentId = ${replyingToCommentId}`);
 }
 
 // Редагування коментаря

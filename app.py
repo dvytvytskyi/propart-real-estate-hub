@@ -3319,14 +3319,21 @@ def create_lead_comment(lead_id):
         content = data.get('content', '').strip()
         parent_id = data.get('parent_id')  # ID батьківського коментаря (для відповіді)
         
+        app.logger.info(f"📝 Створення коментаря для ліда {lead_id}")
+        app.logger.info(f"   Content: {content[:100]}...")
+        app.logger.info(f"   Parent ID: {parent_id}")
+        
         if not content:
             return jsonify({'success': False, 'message': 'Текст коментаря не може бути порожнім'}), 400
         
         # Перевірка, чи існує батьківський коментар (якщо вказано)
+        parent_comment = None
         if parent_id:
             parent_comment = Comment.query.filter_by(id=parent_id, lead_id=lead_id).first()
             if not parent_comment:
+                app.logger.warning(f"⚠️ Батьківський коментар {parent_id} не знайдено для ліда {lead_id}")
                 return jsonify({'success': False, 'message': 'Батьківський коментар не знайдено'}), 404
+            app.logger.info(f"✅ Знайдено батьківський коментар: {parent_comment.id} - {parent_comment.content[:50]}...")
         
         # Створюємо коментар
         comment = Comment(
@@ -3345,9 +3352,15 @@ def create_lead_comment(lead_id):
                 from datetime import datetime, timezone
                 
                 # Формуємо текст нотатки з інформацією про автора
-                note_body = f"[{current_user.username}]: {content}"
-                if parent_id:
-                    note_body = f"Відповідь на коментар:\n{note_body}"
+                if parent_id and parent_comment:
+                    # Для відповіді додаємо інформацію про батьківський коментар
+                    parent_author = parent_comment.user.username if parent_comment.user else "Unknown"
+                    parent_content = parent_comment.content[:100] + ("..." if len(parent_comment.content) > 100 else "")
+                    note_body = f"Відповідь на коментар від {parent_author}:\n\"{parent_content}\"\n\n[{current_user.username}]: {content}"
+                    app.logger.info(f"📝 Створюється нотатка-відповідь на коментар {parent_id}")
+                else:
+                    note_body = f"[{current_user.username}]: {content}"
+                    app.logger.info(f"📝 Створюється нова нотатка")
                 
                 # HubSpot вимагає hs_timestamp в форматі ISO8601
                 current_timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
