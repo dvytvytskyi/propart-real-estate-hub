@@ -3060,8 +3060,8 @@ def dashboard():
     
     # Оптимізований запит: отримуємо тільки необхідні ліди
     if current_user.role == 'admin':
-        # Адмін бачить тільки свої власні ліди
-        leads_query = Lead.query.filter_by(agent_id=current_user.id)
+        # Адмін бачить ВСІ ліди в системі (для управління)
+        leads_query = Lead.query
     else:
         # Агент бачить тільки свої ліди
         leads_query = Lead.query.filter_by(agent_id=current_user.id)
