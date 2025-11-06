@@ -3082,17 +3082,10 @@ def dashboard():
     
     # Оптимізований запит: отримуємо тільки необхідні ліди
     if current_user.role == 'admin':
-        # Адмін бачить свої власні ліди + ліди своїх брокерів
-        broker_ids = [broker.id for broker in User.query.filter_by(admin_id=current_user.id, role='agent').all()]
-        # Додаємо ID самого адміна до списку
-        all_agent_ids = broker_ids + [current_user.id]
-        # Якщо немає брокерів, адмін бачить тільки свої ліди
-        if all_agent_ids:
-            leads_query = Lead.query.filter(Lead.agent_id.in_(all_agent_ids))
-        else:
-            # Якщо немає брокерів, показуємо всі ліди (для адміна)
-            leads_query = Lead.query
+        # Адмін бачить тільки свої власні ліди
+        leads_query = Lead.query.filter_by(agent_id=current_user.id)
     else:
+        # Агент бачить тільки свої ліди
         leads_query = Lead.query.filter_by(agent_id=current_user.id)
     
     # Застосовуємо сортування
@@ -3120,31 +3113,13 @@ def dashboard():
     leads = pagination.items
     
     # ⚡ ОПТИМІЗАЦІЯ: Використовуємо SQL агрегацію замість Python циклів
-    # Базовий запит для метрик
-    if current_user.role == 'admin':
-        # Метрики ТІЛЬКИ для лідів брокерів адміна
-        if broker_ids:
-            metrics_query = db.session.query(
-                func.count(Lead.id).label('total_leads'),
-                func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
-                func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
-                func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
-            ).filter(Lead.agent_id.in_(broker_ids))
-        else:
-            # Якщо немає брокерів - нульові метрики
-            metrics_query = db.session.query(
-                func.count(Lead.id).label('total_leads'),
-                func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
-                func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
-                func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
-            ).filter(Lead.id == -1)
-    else:
-        metrics_query = db.session.query(
-            func.count(Lead.id).label('total_leads'),
-            func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
-            func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
-            func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
-        ).filter(Lead.agent_id == current_user.id)
+    # Базовий запит для метрик - ТІЛЬКИ для лідів поточного користувача
+    metrics_query = db.session.query(
+        func.count(Lead.id).label('total_leads'),
+        func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
+        func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
+        func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
+    ).filter(Lead.agent_id == current_user.id)
     
     result = metrics_query.first()
     
