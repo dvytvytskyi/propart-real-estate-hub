@@ -3046,15 +3046,51 @@ def add_lead():
                             selected_agent = User.query.get(selected_agent_id) if selected_agent_id else current_user
                             agent_username = selected_agent.username if selected_agent else current_user.username
                             
+                            # Отримуємо ID default pipeline з HubSpot API (той, що містить stage "appointmentscheduled")
+                            default_pipeline_id = None
+                            try:
+                                print(f"🔍 Пошук default pipeline (з stage appointmentscheduled) в HubSpot...")
+                                pipelines = hubspot_client.crm.pipelines.pipelines_api.get_all(object_type='deals')
+                                for pipeline in pipelines.results:
+                                    # Шукаємо pipeline, який містить stage "appointmentscheduled"
+                                    if pipeline.stages:
+                                        for stage in pipeline.stages:
+                                            if stage.id == 'appointmentscheduled':
+                                                default_pipeline_id = pipeline.id
+                                                print(f"✅ Знайдено default pipeline ID: {default_pipeline_id} (label: {pipeline.label})")
+                                                break
+                                        if default_pipeline_id:
+                                            break
+                                # Якщо не знайдено за stage, шукаємо за label "default"
+                                if not default_pipeline_id:
+                                    for pipeline in pipelines.results:
+                                        if pipeline.label and pipeline.label.lower() == 'default':
+                                            default_pipeline_id = pipeline.id
+                                            print(f"✅ Знайдено default pipeline за label: {default_pipeline_id}")
+                                            break
+                                # Якщо все ще не знайдено, беремо перший pipeline (зазвичай це default)
+                                if not default_pipeline_id and pipelines.results:
+                                    default_pipeline_id = pipelines.results[0].id
+                                    print(f"⚠️ Використовуємо перший pipeline як default: {default_pipeline_id}")
+                            except Exception as pipeline_error:
+                                print(f"⚠️ Помилка отримання default pipeline: {pipeline_error}")
+                                app.logger.warning(f"⚠️ Помилка отримання default pipeline: {pipeline_error}")
+                            
                             deal_properties = {
                                 "dealname": form.deal_name.data,
                                 "amount": get_budget_value(form.budget.data),
                                 "dealtype": "newbusiness",
-                                "pipeline": "default",  # Pipeline ID для "default"
                                 "dealstage": "appointmentscheduled",  # Стадія ID для "appointmentscheduled"
                                 "phone_number": formatted_phone,  # Додаємо номер телефону в угоду
                                 "from_agent_portal__name_": agent_username  # Ім'я агента (обробника), який відповідає за лід
                             }
+                            
+                            # Додаємо pipeline ID тільки якщо знайдено
+                            if default_pipeline_id:
+                                deal_properties["pipeline"] = default_pipeline_id
+                                print(f"✅ Використовуємо pipeline ID: {default_pipeline_id}")
+                            else:
+                                print(f"⚠️ Pipeline ID не встановлено, HubSpot використає default pipeline автоматично")
                             
                             # Додаємо hubspot_owner_id якщо знайдено
                             if hubspot_owner_id:
