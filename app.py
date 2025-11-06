@@ -1045,56 +1045,33 @@ def fetch_notes_from_hubspot(lead, after_timestamp=None):
     try:
         import requests
         
-        # Використовуємо правильний підхід: отримуємо нотатки через associations API
-        # Спочатку отримуємо всі нотатки, пов'язані з deal через associations endpoint
+        # Використовуємо v4 API для отримання асоціацій (більш надійний спосіб)
         try:
-            # Використовуємо SDK для отримання асоційованих нотаток
-            associations_response = hubspot_client.crm.deals.associations_api.get_all(
-                deal_id=lead.hubspot_deal_id,
-                to_object_type="note"
-            )
+            import requests
             
-            # Отримуємо ID нотаток з асоціацій (різні версії SDK можуть мати різну структуру)
+            # Використовуємо v4 API для отримання асоціацій
+            url = f"https://api.hubapi.com/crm/v4/objects/deal/{lead.hubspot_deal_id}/associations/note"
+            headers = {
+                "Authorization": f"Bearer {HUBSPOT_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            
+            data = response.json()
             note_ids = []
-            app.logger.info(f"   Знайдено {len(associations_response.results)} асоціацій нотаток для deal {lead.hubspot_deal_id}")
             
-            for assoc in associations_response.results:
-                try:
-                    # Спробуємо різні способи отримання ID
-                    note_id = None
-                    
-                    # Спочатку перевіримо тип об'єкта
-                    app.logger.debug(f"   Тип асоціації: {type(assoc)}, атрибути: {dir(assoc) if hasattr(assoc, '__dict__') else 'N/A'}")
-                    
-                    if hasattr(assoc, 'to_object_id'):
-                        note_id = str(assoc.to_object_id)
-                    elif hasattr(assoc, 'id'):
-                        note_id = str(assoc.id)
-                    elif isinstance(assoc, dict):
-                        note_id = str(assoc.get('id') or assoc.get('to_object_id'))
-                    elif hasattr(assoc, '__dict__'):
-                        attrs = assoc.__dict__
-                        note_id = str(attrs.get('id') or attrs.get('to_object_id') or attrs.get('toObjectId'))
-                    else:
-                        # Спробуємо отримати через індекс або рядкове представлення
-                        try:
-                            note_id = str(assoc)
-                        except:
-                            pass
-                    
-                    if note_id and note_id != 'None':
-                        note_ids.append(note_id)
-                        app.logger.info(f"   ✅ Знайдено нотатку з ID: {note_id}")
-                    else:
-                        app.logger.warning(f"   ⚠️ Не вдалося отримати ID з асоціації: {assoc}")
-                except Exception as assoc_parse_error:
-                    app.logger.warning(f"⚠️ Помилка парсингу асоціації: {assoc_parse_error}, assoc type: {type(assoc)}, assoc: {assoc}")
-                    import traceback
-                    app.logger.debug(f"   Traceback: {traceback.format_exc()}")
-                    continue
+            if 'results' in data:
+                for result in data['results']:
+                    note_id = result.get('toObjectId') or result.get('id')
+                    if note_id:
+                        note_ids.append(str(note_id))
+            
+            app.logger.info(f"   Знайдено {len(note_ids)} нотаток через v4 API для deal {lead.hubspot_deal_id}")
             
             if not note_ids:
-                print(f"Немає нотаток, пов'язаних з deal {lead.hubspot_deal_id}")
+                app.logger.info(f"   Немає нотаток, пов'язаних з deal {lead.hubspot_deal_id}")
                 return []
             
             # Отримуємо деталі нотаток
