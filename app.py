@@ -3403,13 +3403,18 @@ def create_lead_comment(lead_id):
                     }]
                 }
                 
-                app.logger.info(f"📝 Створення нотатки в HubSpot для deal {lead.hubspot_deal_id}")
+                app.logger.info(f"📝 Створення ОКРЕМОЇ нотатки в HubSpot для deal {lead.hubspot_deal_id}")
+                app.logger.info(f"   Тип: {'ВІДПОВІДЬ' if parent_id else 'НОВИЙ КОМЕНТАР'}")
                 app.logger.info(f"   Тіло запиту: {data}")
                 
                 response = requests.post(url, headers=headers, json=data)
                 
                 app.logger.info(f"📥 Відповідь HubSpot API: {response.status_code}")
                 app.logger.info(f"   Response body: {response.text[:500] if response.text else 'Empty'}")
+                
+                # Додаткова перевірка для відповідей
+                if parent_id:
+                    app.logger.info(f"   ⚠️ Це відповідь на коментар {parent_id}, має створитися ОКРЕМА нотатка")
                 
                 if response.status_code in [200, 201]:
                     response_data = response.json()
