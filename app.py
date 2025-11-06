@@ -2613,27 +2613,16 @@ def profile_stats():
         # Отримуємо статистику лідів для поточного користувача
         user_id = current_user.id
         
-        # Для адміністратора показуємо загальну статистику
-        if current_user.role == 'admin':
-            leads_stats = {
-                'new': Lead.query.filter_by(status='Нова заявка').count(),
-                'in_progress': Lead.query.filter(
-                    Lead.status.in_(['Обробка', 'Підтвердив інтерес', 'Зателефонував', 'Уточнили потреби'])
-                ).count(),
-                'converted': Lead.query.filter_by(status='Угода').count(),
-                'rejected': Lead.query.filter_by(status='Відмова').count()
-            }
-        else:
-            # Підрахунок лідів по статусам для агента
-            leads_stats = {
-                'new': Lead.query.filter_by(agent_id=user_id, status='Нова заявка').count(),
-                'in_progress': Lead.query.filter(
-                    Lead.agent_id == user_id,
-                    Lead.status.in_(['Обробка', 'Підтвердив інтерес', 'Зателефонував', 'Уточнили потреби'])
-                ).count(),
-                'converted': Lead.query.filter_by(agent_id=user_id, status='Угода').count(),
-                'rejected': Lead.query.filter_by(agent_id=user_id, status='Відмова').count()
-            }
+        # Підрахунок лідів по статусам - ТІЛЬКИ для поточного користувача
+        leads_stats = {
+            'new': Lead.query.filter_by(agent_id=user_id, status='Нова заявка').count(),
+            'in_progress': Lead.query.filter(
+                Lead.agent_id == user_id,
+                Lead.status.in_(['Обробка', 'Підтвердив інтерес', 'Зателефонував', 'Уточнили потреби'])
+            ).count(),
+            'converted': Lead.query.filter_by(agent_id=user_id, status='Угода').count(),
+            'rejected': Lead.query.filter_by(agent_id=user_id, status='Відмова').count()
+        }
         
         # Статистика конверсії по тижнях (останні 4 тижні)
         from datetime import datetime, timedelta
