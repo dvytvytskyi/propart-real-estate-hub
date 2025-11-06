@@ -3282,10 +3282,15 @@ def get_lead_comments(lead_id):
         comments_dict = {}
         root_comments = []
         
+        # Спочатку створюємо всі коментарі в словнику
         for comment in all_comments:
             comment_data = comment.to_dict()
             comment_data['replies'] = []
             comments_dict[comment.id] = comment_data
+        
+        # Потім додаємо відповіді до батьківських коментарів
+        for comment in all_comments:
+            comment_data = comments_dict[comment.id]
             
             if comment.parent_id is None:
                 # Це кореневий коментар
@@ -3294,6 +3299,13 @@ def get_lead_comments(lead_id):
                 # Це відповідь - додаємо до батьківського коментаря
                 if comment.parent_id in comments_dict:
                     comments_dict[comment.parent_id]['replies'].append(comment_data)
+                else:
+                    # Якщо батьківський коментар не знайдено (не повинно бути, але на всяк випадок)
+                    app.logger.warning(f"⚠️ Батьківський коментар {comment.parent_id} не знайдено для коментаря {comment.id}")
+                    # Додаємо як кореневий, щоб не втратити
+                    root_comments.append(comment_data)
+        
+        app.logger.info(f"📊 Завантажено {len(all_comments)} коментарів, з них {len(root_comments)} кореневих")
         
         return jsonify({
             'success': True,

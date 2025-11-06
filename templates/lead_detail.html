@@ -479,7 +479,9 @@ function loadComments() {
         return response.json();
     })
     .then(data => {
+        console.log('📥 Завантажені коментарі:', data);
         if (data.success) {
+            console.log(`✅ Завантажено ${data.total_count} коментарів, ${data.comments.length} кореневих`);
             renderComments(data.comments);
         } else {
             container.innerHTML = 
@@ -525,7 +527,10 @@ function renderComment(comment, isReply = false) {
     
     let repliesHtml = '';
     if (comment.replies && comment.replies.length > 0) {
+        console.log(`📝 Коментар ${comment.id} має ${comment.replies.length} відповідей:`, comment.replies);
         repliesHtml = comment.replies.map(reply => renderComment(reply, true)).join('');
+    } else if (comment.replies_count > 0) {
+        console.warn(`⚠️ Коментар ${comment.id} має replies_count=${comment.replies_count}, але replies порожній`);
     }
     
     return `
