@@ -3342,42 +3342,101 @@ def create_lead_comment(lead_id):
         if lead.hubspot_deal_id and hubspot_client:
             try:
                 from hubspot.crm.objects.notes import SimplePublicObjectInput
-                from datetime import datetime
+                from datetime import datetime, timezone
                 
                 # Формуємо текст нотатки з інформацією про автора
                 note_body = f"[{current_user.username}]: {content}"
                 if parent_id:
                     note_body = f"Відповідь на коментар:\n{note_body}"
                 
-                # HubSpot вимагає hs_timestamp для створення нотатки
-                current_timestamp = int(datetime.now().timestamp() * 1000)  # Мілісекунди
+                # HubSpot вимагає hs_timestamp в форматі ISO8601
+                current_timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
                 
-                note_properties = {
-                    "hs_note_body": note_body,
-                    "hs_timestamp": current_timestamp
+                # Використовуємо правильну назву поля: hsnotebody (без підкреслення)
+                # Спробуємо створити нотатку через прямий HTTP запит для кращого контролю
+                import requests
+                api_key = HUBSPOT_API_KEY
+                
+                # Створюємо нотатку через v3 API
+                url = "https://api.hubapi.com/crm/v3/objects/notes"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
                 }
                 
-                note_input = SimplePublicObjectInput(properties=note_properties)
-                hubspot_note = hubspot_client.crm.objects.notes.basic_api.create(
-                    simple_public_object_input=note_input
-                )
+                # Тіло запиту з асоціацією до deal
+                data = {
+                    "properties": {
+                        "hsnotebody": note_body,
+                        "hs_timestamp": current_timestamp
+                    },
+                    "associations": [{
+                        "to": {
+                            "id": lead.hubspot_deal_id
+                        },
+                        "types": [{
+                            "associationCategory": "HUBSPOT_DEFINED",
+                            "associationTypeId": 214
+                        }]
+                    }]
+                }
                 
-                # Створюємо зв'язок між нотаткою та deal
-                if hubspot_note.id:
-                    comment.hubspot_note_id = str(hubspot_note.id)
+                response = requests.post(url, headers=headers, json=data)
+                
+                if response.status_code in [200, 201]:
+                    response_data = response.json()
+                    hubspot_note_id = response_data.get('id')
+                    if hubspot_note_id:
+                        comment.hubspot_note_id = str(hubspot_note_id)
+                        app.logger.info(f"✅ Нотатка створена та асоційована з deal в HubSpot: {hubspot_note_id}")
+                        print(f"✅ Нотатка створена та асоційована з deal в HubSpot: {hubspot_note_id}")
+                    else:
+                        app.logger.warning(f"⚠️ Нотатка створена, але ID не отримано: {response_data}")
+                        print(f"⚠️ Нотатка створена, але ID не отримано")
+                else:
+                    # Якщо HTTP запит не працює, спробуємо через SDK як fallback
+                    app.logger.warning(f"⚠️ HTTP запит не вдався ({response.status_code}), спробуємо через SDK: {response.text}")
+                    print(f"⚠️ HTTP запит не вдався, спробуємо через SDK...")
                     
-                    # Асоціюємо нотатку з deal
-                    hubspot_client.crm.associations.basic_api.create(
-                        from_object_type="notes",
-                        from_object_id=str(hubspot_note.id),
-                        to_object_type="deals",
-                        to_object_id=lead.hubspot_deal_id,
-                        association_type="note_to_deal"
+                    # Fallback через SDK
+                    note_properties = {
+                        "hsnotebody": note_body,
+                        "hs_timestamp": current_timestamp
+                    }
+                    note_input = SimplePublicObjectInput(properties=note_properties)
+                    hubspot_note = hubspot_client.crm.objects.notes.basic_api.create(
+                        simple_public_object_input=note_input
                     )
                     
-                    print(f"✅ Нотатка створена в HubSpot: {hubspot_note.id}")
+                    if hubspot_note.id:
+                        comment.hubspot_note_id = str(hubspot_note.id)
+                        
+                        # Асоціюємо через окремий запит
+                        try:
+                            url = f"https://api.hubapi.com/crm/v4/objects/notes/{hubspot_note.id}/associations/deal/{lead.hubspot_deal_id}"
+                            headers = {
+                                "Authorization": f"Bearer {api_key}",
+                                "Content-Type": "application/json"
+                            }
+                            data = [{
+                                "associationCategory": "HUBSPOT_DEFINED",
+                                "associationTypeId": 214
+                            }]
+                            
+                            assoc_response = requests.put(url, headers=headers, json=data)
+                            if assoc_response.status_code in [200, 201]:
+                                print(f"✅ Нотатка створена та асоційована з deal (fallback) в HubSpot: {hubspot_note.id}")
+                            else:
+                                app.logger.warning(f"⚠️ Асоціація не вдалася: {assoc_response.status_code} - {assoc_response.text}")
+                        except Exception as assoc_error:
+                            app.logger.warning(f"⚠️ Помилка асоціації: {assoc_error}")
+                    
             except Exception as hubspot_error:
-                app.logger.warning(f"⚠️ Помилка створення нотатки в HubSpot: {hubspot_error}")
+                app.logger.error(f"❌ Помилка створення нотатки в HubSpot: {hubspot_error}")
+                app.logger.error(f"   Тип помилки: {type(hubspot_error).__name__}")
+                import traceback
+                app.logger.error(f"   Traceback: {traceback.format_exc()}")
+                print(f"❌ Помилка створення нотатки в HubSpot: {hubspot_error}")
                 # Продовжуємо - коментар все одно зберігається локально
         
         db.session.commit()
