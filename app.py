@@ -1154,9 +1154,12 @@ def fetch_notes_from_hubspot(lead, after_timestamp=None):
 def sync_notes_from_hubspot(lead, only_new=True):
     """Синхронізує нотатки з HubSpot в коментарі"""
     if not hubspot_client or not lead.hubspot_deal_id:
+        app.logger.warning(f"⚠️ Немає HubSpot клієнта або deal_id для синхронізації нотаток ліда {lead.id}")
         return False
     
     try:
+        app.logger.info(f"📝 Початок синхронізації нотаток для ліда {lead.id}, deal_id: {lead.hubspot_deal_id}")
+        
         # Визначаємо останній timestamp синхронізованої нотатки
         after_timestamp = None
         if only_new:
@@ -1170,17 +1173,28 @@ def sync_notes_from_hubspot(lead, only_new=True):
             if last_synced_comment and last_synced_comment.created_at:
                 # Конвертуємо в ISO8601 формат для порівняння
                 after_timestamp = last_synced_comment.created_at.isoformat()
+                app.logger.info(f"   Останній синхронізований коментар: {last_synced_comment.hubspot_note_id}, дата: {after_timestamp}")
+            else:
+                app.logger.info(f"   Немає попередньо синхронізованих коментарів, завантажуємо всі нотатки")
         
         # Отримуємо нотатки з HubSpot
+        app.logger.info(f"   Отримання нотаток з HubSpot для deal {lead.hubspot_deal_id}...")
         hubspot_notes = fetch_notes_from_hubspot(lead, after_timestamp=after_timestamp)
+        app.logger.info(f"   Отримано {len(hubspot_notes)} нотаток з HubSpot")
         
         synced_count = 0
         for note_data in hubspot_notes:
+            app.logger.info(f"   Обробка нотатки HubSpot {note_data.get('id')}: {note_data.get('body', '')[:50]}...")
+            
             # Перевіряємо, чи існує вже такий коментар (за hubspot_note_id)
             existing_comment = Comment.query.filter_by(
                 hubspot_note_id=note_data['id'],
                 lead_id=lead.id
             ).first()
+            
+            if existing_comment:
+                app.logger.info(f"   ⏭️ Нотатка {note_data['id']} вже синхронізована (коментар {existing_comment.id})")
+                continue
             
             if not existing_comment:
                 # Перевіряємо, чи нотатка не створена нашою системою
@@ -1195,7 +1209,9 @@ def sync_notes_from_hubspot(lead, only_new=True):
                     'Відповідь на нотатку HubSpot' in note_body
                 )
                 
-                if not is_our_note:
+                if is_our_note:
+                    app.logger.info(f"   ⏭️ Пропускаємо нотатку {note_data['id']} - створена нашою системою")
+                elif not is_our_note:
                     # Створюємо коментар з нотатки HubSpot
                     # Шукаємо користувача "admin" або створюємо від імені системи
                     admin_user = User.query.filter_by(role='admin').first()
