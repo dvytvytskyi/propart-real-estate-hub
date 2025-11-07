@@ -3643,9 +3643,9 @@ def create_lead_comment(lead_id):
                 from hubspot.crm.objects.notes import SimplePublicObjectInput
                 from datetime import datetime, timezone
                 
-                # Формуємо текст нотатки з інформацією про автора
+                # Формуємо текст нотатки (без email в тексті)
                 # ВАЖЛИВО: HubSpot не підтримує тредовані нотатки, тому кожен коментар = окрема нотатка
-                note_body = f"[{current_user.username} ({current_user.email})]: {content}"
+                note_body = content
                 app.logger.info(f"📝 Створюється нотатка в HubSpot для коментаря")
                 
                 # HubSpot вимагає hs_timestamp в форматі ISO8601
@@ -3665,10 +3665,12 @@ def create_lead_comment(lead_id):
                 
                 # Тіло запиту з асоціацією до deal
                 # Правильна назва поля: hs_note_body (з підкресленням), не hsnotebody
+                # Додаємо email як окреме поле
                 data = {
                     "properties": {
-                        "hs_note_body": note_body,  # Правильна назва поля
-                        "hs_timestamp": current_timestamp
+                        "hs_note_body": note_body,  # Текст коментаря без email
+                        "hs_timestamp": current_timestamp,
+                        "author_email": current_user.email  # Email як окреме поле
                     },
                     "associations": [{
                         "to": {
@@ -3723,7 +3725,8 @@ def create_lead_comment(lead_id):
                     # Fallback через SDK
                     note_properties = {
                         "hs_note_body": note_body,  # Правильна назва поля
-                        "hs_timestamp": current_timestamp
+                        "hs_timestamp": current_timestamp,
+                        "author_email": current_user.email  # Email як окреме поле
                     }
                     note_input = SimplePublicObjectInput(properties=note_properties)
                     hubspot_note = hubspot_client.crm.objects.notes.basic_api.create(
