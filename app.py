@@ -3091,13 +3091,23 @@ def dashboard():
     leads = pagination.items
     
     # ⚡ ОПТИМІЗАЦІЯ: Використовуємо SQL агрегацію замість Python циклів
-    # Базовий запит для метрик - ТІЛЬКИ для лідів поточного користувача
-    metrics_query = db.session.query(
-        func.count(Lead.id).label('total_leads'),
-        func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
-        func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
-        func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
-    ).filter(Lead.agent_id == current_user.id)
+    # Базовий запит для метрик - рахуємо ті самі ліди, що показує пагінація
+    if current_user.role == 'admin':
+        # Адмін: рахуємо ВСІ ліди в системі (як і в пагінації)
+        metrics_query = db.session.query(
+            func.count(Lead.id).label('total_leads'),
+            func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
+            func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
+            func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
+        )
+    else:
+        # Агент: рахуємо тільки свої ліди (як і в пагінації)
+        metrics_query = db.session.query(
+            func.count(Lead.id).label('total_leads'),
+            func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
+            func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
+            func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
+        ).filter(Lead.agent_id == current_user.id)
     
     result = metrics_query.first()
     
