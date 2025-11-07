@@ -3403,8 +3403,13 @@ def add_lead():
                                 "dealstage": "appointmentscheduled",  # Стадія ID для "Новая заявка"
                                 "phone_number": formatted_phone,  # Додаємо номер телефону в угоду
                                 "from_agent_portal__name_": agent_username,  # Ім'я агента (обробника), який відповідає за лід
-                                "internal_email": form.email.data  # Email як окреме поле в угоді
                             }
+                            
+                            # Додаємо email як окреме поле в угоді (internal name: "email")
+                            if form.email.data and form.email.data.strip():
+                                deal_properties["email"] = form.email.data.strip()
+                                print(f"✅ Додано email до угоди: {form.email.data.strip()}")
+                            
                             print(f"✅ Використовуємо pipeline: default, stage: appointmentscheduled")
                             
                             # Додаємо hubspot_owner_id якщо знайдено
@@ -3414,12 +3419,39 @@ def add_lead():
                             else:
                                 print(f"⚠️ hubspot_owner_id не встановлено (owner не знайдено або не налаштовано)")
                             
-                            print(f"Властивості угоди: {deal_properties}")
+                            print(f"📋 Властивості угоди для HubSpot: {deal_properties}")
                             deal_input = DealInput(properties=deal_properties)
                             print(f"Створюємо угоду з вхідними даними: {deal_input}")
                             hubspot_deal = hubspot_client.crm.deals.basic_api.create(deal_input)
                             hubspot_deal_id = str(hubspot_deal.id)
                             print(f"HubSpot угода створено успішно: {hubspot_deal_id}")
+                            
+                            # Перевіряємо, чи email передався в угоду, якщо ні - оновлюємо окремо
+                            if form.email.data and form.email.data.strip() and hubspot_deal_id:
+                                try:
+                                    # Перевіряємо, чи email є в створеній угоді
+                                    created_deal = hubspot_client.crm.deals.basic_api.get_by_id(
+                                        deal_id=hubspot_deal_id,
+                                        properties=["email"]
+                                    )
+                                    deal_email = created_deal.properties.get('email') if created_deal.properties else None
+                                    
+                                    # Якщо email не передався при створенні, оновлюємо окремо
+                                    if not deal_email or deal_email != form.email.data.strip():
+                                        print(f"⚠️ Email не передався при створенні, оновлюємо окремо...")
+                                        update_deal_properties = {"email": form.email.data.strip()}
+                                        update_deal_input = DealInput(properties=update_deal_properties)
+                                        hubspot_client.crm.deals.basic_api.update(
+                                            deal_id=hubspot_deal_id,
+                                            simple_public_object_input=update_deal_input
+                                        )
+                                        print(f"✅ Email успішно оновлено в угоді: {form.email.data.strip()}")
+                                        app.logger.info(f"✅ Email оновлено в HubSpot угоді {hubspot_deal_id}: {form.email.data.strip()}")
+                                    else:
+                                        print(f"✅ Email вже є в угоді: {deal_email}")
+                                except Exception as email_update_error:
+                                    print(f"⚠️ Помилка перевірки/оновлення email в угоді: {email_update_error}")
+                                    app.logger.warning(f"⚠️ Помилка перевірки/оновлення email в угоді {hubspot_deal_id}: {email_update_error}")
                             
                             # Створюємо зв'язок між контактом та угодою
                             print(f"=== СТВОРЕННЯ ЗВ'ЯЗКУ КОНТАКТ-УГОДА ===")
@@ -3928,6 +3960,22 @@ def edit_lead(lead_id):
             lead.birth_date = None
         
         db.session.commit()
+        
+        # Оновлюємо email в HubSpot угоді, якщо він змінився
+        if lead.hubspot_deal_id and hubspot_client and form.email.data and form.email.data.strip():
+            try:
+                from hubspot.crm.deals import SimplePublicObjectInput as DealInput
+                update_deal_properties = {"email": form.email.data.strip()}
+                update_deal_input = DealInput(properties=update_deal_properties)
+                hubspot_client.crm.deals.basic_api.update(
+                    deal_id=lead.hubspot_deal_id,
+                    simple_public_object_input=update_deal_input
+                )
+                print(f"✅ Email оновлено в HubSpot угоді {lead.hubspot_deal_id}: {form.email.data.strip()}")
+                app.logger.info(f"✅ Email оновлено в HubSpot угоді {lead.hubspot_deal_id}: {form.email.data.strip()}")
+            except Exception as email_update_error:
+                print(f"⚠️ Помилка оновлення email в HubSpot угоді: {email_update_error}")
+                app.logger.warning(f"⚠️ Помилка оновлення email в HubSpot угоді {lead.hubspot_deal_id}: {email_update_error}")
         
         # Якщо статус змінився, оновлюємо його в HubSpot
         if old_status != lead.status:
