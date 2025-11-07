@@ -3117,7 +3117,15 @@ def dashboard():
     transferred_leads = result.transferred_leads or 0
     
     # Сума бюджетів (потребує завантаження даних, бо budget - строка)
-    total_budget = sum(get_budget_value(lead.budget) for lead in leads)
+    # Для адміна рахуємо по всіх лідах, для агента - тільки по своїх
+    if current_user.role == 'admin':
+        # Адмін: рахуємо по всіх лідах в системі
+        all_leads_for_budget = Lead.query.all()
+    else:
+        # Агент: рахуємо тільки по своїх лідах
+        all_leads_for_budget = Lead.query.filter_by(agent_id=current_user.id).all()
+    
+    total_budget = sum(get_budget_value(lead.budget) for lead in all_leads_for_budget)
     avg_budget = total_budget / total_leads if total_leads > 0 else 0
     
     # Конверсія (відсоток закритих лідів)
