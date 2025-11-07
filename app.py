@@ -3402,7 +3402,8 @@ def add_lead():
                                 "pipeline": "default",  # Pipeline ID для "Лиды" (default pipeline)
                                 "dealstage": "appointmentscheduled",  # Стадія ID для "Новая заявка"
                                 "phone_number": formatted_phone,  # Додаємо номер телефону в угоду
-                                "from_agent_portal__name_": agent_username  # Ім'я агента (обробника), який відповідає за лід
+                                "from_agent_portal__name_": agent_username,  # Ім'я агента (обробника), який відповідає за лід
+                                "internal_email": form.email.data  # Email як окреме поле в угоді
                             }
                             print(f"✅ Використовуємо pipeline: default, stage: appointmentscheduled")
                             
