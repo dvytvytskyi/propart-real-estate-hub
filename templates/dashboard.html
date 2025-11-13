@@ -126,9 +126,18 @@
                                     <i class="fas fa-sort sort-icon" style="opacity: 0.3;"></i>
                                 {% endif %}
                             </th>
-                            <th class="col-updated">
-                                <i class="fas fa-clock"></i>
-                                <span>Останнє оновлення</span>
+                            <th class="col-updated sortable" onclick="sortTable('created_at')" style="cursor: pointer;">
+                                <i class="fas fa-calendar-plus"></i>
+                                <span>Дата додавання</span>
+                                {% if sort_by == 'created_at' %}
+                                    {% if order == 'asc' %}
+                                        <i class="fas fa-sort-up sort-icon"></i>
+                                    {% else %}
+                                        <i class="fas fa-sort-down sort-icon"></i>
+                                    {% endif %}
+                                {% else %}
+                                    <i class="fas fa-sort sort-icon" style="opacity: 0.3;"></i>
+                                {% endif %}
                             </th>
                             <th class="col-actions">
                                 <i class="fas fa-cogs"></i>
@@ -204,9 +213,7 @@
                                 <div class="date-cell">
                                     <i class="fas fa-calendar-alt"></i>
                                     <span>
-                                        {% if lead.updated_at %}
-                                            {{ lead.updated_at | ukraine_time }}
-                                        {% elif lead.created_at %}
+                                        {% if lead.created_at %}
                                             {{ lead.created_at | ukraine_time }}
                                         {% else %}
                                             Не вказано

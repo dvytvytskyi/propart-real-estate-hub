@@ -3053,7 +3053,7 @@ def dashboard():
     from sqlalchemy import func, case
     
     # Отримуємо параметри сортування та пагінації з URL
-    sort_by = request.args.get('sort_by', 'updated_at')  # За замовчуванням сортуємо по даті оновлення
+    sort_by = request.args.get('sort_by', 'created_at')  # За замовчуванням сортуємо по даті додавання
     order = request.args.get('order', 'desc')  # За замовчуванням - від нових до старих
     page = request.args.get('page', 1, type=int)  # Номер сторінки
     per_page = 20  # Кількість лідів на сторінку
@@ -3080,6 +3080,11 @@ def dashboard():
             leads_query = leads_query.order_by(status_order.asc())
         else:
             leads_query = leads_query.order_by(status_order.desc())
+    elif sort_by == 'created_at':
+        if order == 'asc':
+            leads_query = leads_query.order_by(Lead.created_at.asc())
+        else:
+            leads_query = leads_query.order_by(Lead.created_at.desc())
     elif sort_by == 'updated_at':
         if order == 'asc':
             leads_query = leads_query.order_by(Lead.updated_at.asc())
