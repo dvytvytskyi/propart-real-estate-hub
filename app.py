@@ -29,6 +29,11 @@ load_dotenv()
 
 app = Flask(__name__)
 
+# ===== НАЛАШТУВАННЯ ШАБЛОНІВ =====
+# Автоматичне перезавантаження шаблонів при змінах (для development)
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # Вимкнути кешування статичних файлів
+
 # ===== ЧАСОВИЙ ПОЯС =====
 # Налаштовуємо часовий пояс для України (UTC+3)
 import os
