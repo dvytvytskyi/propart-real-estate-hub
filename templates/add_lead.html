@@ -170,22 +170,6 @@
                             </div>
                         </div>
                         
-                        <div class="form-group full-width">
-                            <label for="notes" class="form-label">
-                                <i class="fas fa-sticky-note"></i>
-                                <span>Примітки</span>
-                            </label>
-                            <textarea class="form-textarea" id="notes" name="notes" rows="4" 
-                                      placeholder="Додаткові відомості про лід..." autocomplete="off" data-lpignore="true" data-form-type="other">{{ form.notes.data or '' }}</textarea>
-                            {% if form.notes.errors %}
-                                <div class="form-error">
-                                    {% for error in form.notes.errors %}
-                                        {{ error }}
-                                    {% endfor %}
-                                </div>
-                            {% endif %}
-                        </div>
-                        
                         {% if current_user.role == 'admin' %}
                         <div class="form-group full-width">
                             <label for="agent_id" class="form-label">
