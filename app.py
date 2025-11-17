@@ -3687,6 +3687,10 @@ def create_lead_comment(lead_id):
         if not content:
             return jsonify({'success': False, 'message': 'Текст коментаря не може бути порожнім'}), 400
         
+        # Перевірка максимальної довжини коментаря (3000 символів)
+        if len(content) > 3000:
+            return jsonify({'success': False, 'message': 'Текст коментаря не може перевищувати 3000 символів'}), 400
+        
         # Створюємо коментар (завжди без parent_id - плоскі коментарі)
         comment = Comment(
             lead_id=lead_id,
@@ -3854,6 +3858,10 @@ def update_comment(comment_id):
         
         if not content:
             return jsonify({'success': False, 'message': 'Текст коментаря не може бути порожнім'}), 400
+        
+        # Перевірка максимальної довжини коментаря (3000 символів)
+        if len(content) > 3000:
+            return jsonify({'success': False, 'message': 'Текст коментаря не може перевищувати 3000 символів'}), 400
         
         comment.content = content
         db.session.commit()
