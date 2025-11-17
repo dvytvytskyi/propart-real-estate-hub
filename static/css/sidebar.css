@@ -748,6 +748,11 @@ body {
   width: 17%;
 }
 
+.leads-table .col-created-date {
+  min-width: 180px;
+  width: 17%;
+}
+
 .leads-table .col-actions {
   min-width: 180px;
   width: auto;
