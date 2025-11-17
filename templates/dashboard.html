@@ -239,7 +239,7 @@
                                     <i class="fas fa-calendar"></i>
                                     <span>
                                         {% if lead.created_at %}
-                                            {{ lead.created_at | ukraine_time('%Y-%m-%d %H:%M') }}
+                                            {{ lead.created_at.strftime('%Y-%m-%d %H:%M') }}
                                         {% else %}
                                             Not specified
                                         {% endif %}
