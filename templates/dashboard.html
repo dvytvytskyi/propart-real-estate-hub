@@ -139,6 +139,19 @@
                                     <i class="fas fa-sort sort-icon" style="opacity: 0.3;"></i>
                                 {% endif %}
                             </th>
+                            <th class="col-created-date sortable" onclick="sortTable('created_at')" style="cursor: pointer;">
+                                <i class="fas fa-calendar"></i>
+                                <span>Created Date</span>
+                                {% if sort_by == 'created_at' %}
+                                    {% if order == 'asc' %}
+                                        <i class="fas fa-sort-up sort-icon"></i>
+                                    {% else %}
+                                        <i class="fas fa-sort-down sort-icon"></i>
+                                    {% endif %}
+                                {% else %}
+                                    <i class="fas fa-sort sort-icon" style="opacity: 0.3;"></i>
+                                {% endif %}
+                            </th>
                             <th class="col-actions">
                                 <i class="fas fa-cogs"></i>
                                 <span>Дії</span>
@@ -217,6 +230,18 @@
                                             {{ lead.created_at | ukraine_time }}
                                         {% else %}
                                             Не вказано
+                                        {% endif %}
+                                    </span>
+                                </div>
+                            </td>
+                            <td class="col-created-date">
+                                <div class="date-cell">
+                                    <i class="fas fa-calendar"></i>
+                                    <span>
+                                        {% if lead.created_at %}
+                                            {{ lead.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                        {% else %}
+                                            Not specified
                                         {% endif %}
                                     </span>
                                 </div>
