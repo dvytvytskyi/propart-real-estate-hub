@@ -99,18 +99,32 @@
                                 <span>Статус</span>
                             </label>
                             <div class="form-value">
-                                <span class="status-badge {{ lead.status }}">
-                                {% if lead.status == 'new' %}Нова заявка
-                                {% elif lead.status == 'contacted' %}На зв'язку
-                                {% elif lead.status == 'qualified' %}Кваліфікований
-                                {% elif lead.status == 'closed' %}Закритий
-                                {% else %}{{ lead.status }}{% endif %}
-                            </span>
-                            {% if lead.hubspot_stage_label %}
-                                <div style="font-size: 13px; color: #888; margin-top: 8px; padding: 5px 10px; background: #f5f5f5; border-radius: 4px; display: inline-block;">
-                                    <i class="fas fa-tag" style="font-size: 11px;"></i> <strong>HubSpot:</strong> {{ lead.hubspot_stage_label }}
-                                </div>
-                            {% endif %}
+                                {% if lead.hubspot_stage_label %}
+                                    {# Показуємо детальний статус з HubSpot як основний #}
+                                    <span class="status-badge {{ lead.status }}">
+                                        {% if lead.status == 'new' %}
+                                            <i class="fas fa-circle"></i>
+                                        {% elif lead.status == 'contacted' %}
+                                            <i class="fas fa-phone"></i>
+                                        {% elif lead.status == 'qualified' %}
+                                            <i class="fas fa-check-circle"></i>
+                                        {% elif lead.status == 'closed' %}
+                                            <i class="fas fa-handshake"></i>
+                                        {% else %}
+                                            <i class="fas fa-question-circle"></i>
+                                        {% endif %}
+                                        <span>{{ lead.hubspot_stage_label }}</span>
+                                    </span>
+                                {% else %}
+                                    {# Fallback на перекладений статус, якщо немає label з HubSpot #}
+                                    <span class="status-badge {{ lead.status }}">
+                                        {% if lead.status == 'new' %}Нова заявка
+                                        {% elif lead.status == 'contacted' %}На зв'язку
+                                        {% elif lead.status == 'qualified' %}Кваліфікований
+                                        {% elif lead.status == 'closed' %}Закритий
+                                        {% else %}{{ lead.status }}{% endif %}
+                                    </span>
+                                {% endif %}
                         </div>
                         </div>
                         

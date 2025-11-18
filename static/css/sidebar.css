@@ -808,9 +808,9 @@ body {
 }
 
 .status-badge.new {
-  background: #dbeafe;
-  color: #1e40af;
-  border: 1px solid #93c5fd;
+  background: #fee2e2 !important;
+  color: #991b1b !important;
+  border: 1px solid #fca5a5 !important;
 }
 
 .status-badge.contacted {
@@ -1240,8 +1240,9 @@ body {
 }
 
 .status-badge.new {
-  background: #dbeafe;
-  color: #1e40af;
+  background: #fee2e2 !important;
+  color: #991b1b !important;
+  border: 1px solid #fca5a5 !important;
 }
 
 .status-badge.contacted {

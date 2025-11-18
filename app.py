@@ -1654,12 +1654,12 @@ def sync_lead_from_hubspot(lead):
                         '3204738267': 'closed'      # Сделка закрыта
                     }
                     
-                    # Маппінг ID стадій на їх назви (тільки валідні ID)
+                    # Маппінг ID стадій на їх назви з HubSpot (правильні назви з API)
                     stage_labels = {
-                        '3204738258': 'Новая заявка',
-                        '3204738259': 'Контакт встановлено',
-                        '3204738261': 'Назначена встреча',
-                        '3204738262': 'Встреча проведена',
+                        '3204738258': 'Запрос получен',
+                        '3204738259': 'Отправлены варианты/Передан на партнеров',
+                        '3204738261': 'Назначена встреча/тур',
+                        '3204738262': 'Встреча/тур проведены',
                         '3204738265': 'Переговоры',
                         '3204738266': 'Задаток',
                         '3204738267': 'Сделка закрыта'
@@ -1864,6 +1864,85 @@ def sync_all_leads_from_hubspot():
     
     print(f"Синхронізовано {synced_count} з {len(leads)} лідів")
     return synced_count > 0
+
+def update_hubspot_stage_labels_for_leads(limit=100, force_update=False):
+    """Оновлює hubspot_stage_label для лідів, які мають hubspot_deal_id
+    Обмежуємо кількість лідів для оновлення за один раз, щоб не перевантажувати API
+    
+    Args:
+        limit: Максимальна кількість лідів для оновлення за один раз
+        force_update: Якщо True, оновлює всі ліди з hubspot_deal_id, навіть якщо вони вже мають label
+    """
+    if not hubspot_client:
+        return False
+    
+    # Маппінг ID стадій на їх назви з HubSpot (правильні назви з API)
+    stage_labels = {
+        '3204738258': 'Запрос получен',
+        '3204738259': 'Отправлены варианты/Передан на партнеров',
+        '3204738261': 'Назначена встреча/тур',
+        '3204738262': 'Встреча/тур проведены',
+        '3204738265': 'Переговоры',
+        '3204738266': 'Задаток',
+        '3204738267': 'Сделка закрыта'
+    }
+    
+    # Отримуємо ліди з hubspot_deal_id
+    if force_update:
+        # Оновлюємо всі ліди з hubspot_deal_id
+        leads = Lead.query.filter(
+            Lead.hubspot_deal_id.isnot(None)
+        ).limit(limit).all()
+    else:
+        # Оновлюємо тільки ті, що не мають label або мають застарілі значення
+        # Застарілі значення: "Новая заявка", "Контакт встановлено", "Назначена встреча", "Встреча проведена"
+        # Або будь-які значення, які не відповідають поточному маппінгу
+        old_labels = ['Новая заявка', 'Контакт встановлено', 'Назначена встреча', 'Встреча проведена']
+        valid_labels = list(stage_labels.values())
+        leads = Lead.query.filter(
+            Lead.hubspot_deal_id.isnot(None),
+            db.or_(
+                Lead.hubspot_stage_label.is_(None),
+                Lead.hubspot_stage_label == '',
+                Lead.hubspot_stage_label.in_(old_labels),
+                ~Lead.hubspot_stage_label.in_(valid_labels)  # Оновлюємо також ті, що не в поточному списку
+            )
+        ).limit(limit).all()
+    
+    if not leads:
+        return False
+    
+    updated_count = 0
+    for lead in leads:
+        try:
+            deal = hubspot_client.crm.deals.basic_api.get_by_id(
+                deal_id=lead.hubspot_deal_id,
+                properties=["dealstage"]
+            )
+            
+            if deal.properties and deal.properties.get('dealstage'):
+                hubspot_stage = deal.properties['dealstage']
+                if hubspot_stage in stage_labels:
+                    new_label = stage_labels[hubspot_stage]
+                    # Оновлюємо тільки якщо label змінився або його немає
+                    if lead.hubspot_stage_label != new_label:
+                        lead.hubspot_stage_label = new_label
+                        updated_count += 1
+                        app.logger.debug(f"✅ Оновлено hubspot_stage_label для ліда {lead.id}: {new_label}")
+        except Exception as e:
+            app.logger.error(f"Помилка оновлення hubspot_stage_label для ліда {lead.id}: {e}")
+            continue
+    
+    # Зберігаємо всі зміни одним commit
+    if updated_count > 0:
+        try:
+            db.session.commit()
+            app.logger.info(f"✅ Збережено hubspot_stage_label для {updated_count} лідів")
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Помилка збереження hubspot_stage_label: {e}")
+    
+    return updated_count
 
 def fetch_all_deals_from_hubspot():
     """Завантажує всі deals з HubSpot та створює/оновлює ліди в локальній БД"""
@@ -2085,9 +2164,39 @@ def fetch_all_deals_from_hubspot():
                                 # Визначаємо статус з deal stage
                                 status = 'new'
                                 deal_stage = deal_properties.get('dealstage', '')
+                                hubspot_stage_label = None
+                                
+                                # Маппінг ID стадій на їх назви з HubSpot (правильні назви з API)
+                                stage_labels = {
+                                    '3204738258': 'Запрос получен',
+                                    '3204738259': 'Отправлены варианты/Передан на партнеров',
+                                    '3204738261': 'Назначена встреча/тур',
+                                    '3204738262': 'Встреча/тур проведены',
+                                    '3204738265': 'Переговоры',
+                                    '3204738266': 'Задаток',
+                                    '3204738267': 'Сделка закрыта'
+                                }
+                                
+                                # Мапінг стадій HubSpot на статуси системи
+                                stage_mapping = {
+                                    '3204738258': 'new',
+                                    '3204738259': 'contacted',
+                                    '3204738261': 'qualified',
+                                    '3204738262': 'qualified',
+                                    '3204738265': 'qualified',
+                                    '3204738266': 'qualified',
+                                    '3204738267': 'closed'
+                                }
+                                
                                 if deal_stage:
-                                    # Мапінг стадій HubSpot на статуси системи
-                                    if 'closedwon' in deal_stage.lower() or 'closed won' in deal_stage.lower():
+                                    # Отримуємо label з маппінгу
+                                    if deal_stage in stage_labels:
+                                        hubspot_stage_label = stage_labels[deal_stage]
+                                    
+                                    # Мапимо на статус
+                                    if deal_stage in stage_mapping:
+                                        status = stage_mapping[deal_stage]
+                                    elif 'closedwon' in deal_stage.lower() or 'closed won' in deal_stage.lower():
                                         status = 'closed'
                                     elif 'qualified' in deal_stage.lower():
                                         status = 'qualified'
@@ -2121,6 +2230,8 @@ def fetch_all_deals_from_hubspot():
                                     if budget:
                                         existing_lead.budget = budget
                                     existing_lead.status = status
+                                    if hubspot_stage_label:
+                                        existing_lead.hubspot_stage_label = hubspot_stage_label
                                     if contact_id:
                                         existing_lead.hubspot_contact_id = contact_id
                                     existing_lead.hubspot_deal_id = deal_id
@@ -2143,6 +2254,8 @@ def fetch_all_deals_from_hubspot():
                                         if budget:
                                             duplicate_lead.budget = budget
                                         duplicate_lead.status = status
+                                        if hubspot_stage_label:
+                                            duplicate_lead.hubspot_stage_label = hubspot_stage_label
                                         updated_count += 1
                                         print(f"✅ Оновлено дублікат ліда {duplicate_lead.id} з HubSpot deal {deal_id}")
                                     else:
@@ -2155,7 +2268,8 @@ def fetch_all_deals_from_hubspot():
                                             budget=budget or 'до 200к',
                                             status=status,
                                             hubspot_contact_id=contact_id,
-                                            hubspot_deal_id=deal_id
+                                            hubspot_deal_id=deal_id,
+                                            hubspot_stage_label=hubspot_stage_label
                                         )
                                         
                                         db.session.add(new_lead)
@@ -3020,12 +3134,13 @@ def admin_agent_details(agent_id):
         """
         
         for lead in leads[:10]:  # Показуємо тільки останні 10 лідів
+            status_display = lead.hubspot_stage_label if lead.hubspot_stage_label else lead.status
             html += f"""
                             <tr>
                                 <td>{lead.id}</td>
                                 <td>{lead.deal_name}</td>
                                 <td>{lead.email}</td>
-                                <td><span class="badge bg-{'success' if lead.status == 'closed' else 'primary'}">{lead.status}</span></td>
+                                <td><span class="badge bg-{'success' if lead.status == 'closed' else 'primary'}">{status_display}</span></td>
                                 <td>{lead.created_at.strftime('%d.%m.%Y') if lead.created_at else 'Не вказано'}</td>
                             </tr>
             """
@@ -3053,6 +3168,16 @@ def dashboard_test():
 def dashboard():
     # ⚡ ОПТИМІЗАЦІЯ: Видалено автоматичну синхронізацію з HubSpot
     # Тепер синхронізація доступна через окрему кнопку
+    
+    # Оновлюємо hubspot_stage_label для лідів, які мають hubspot_deal_id
+    # Це робиться при завантаженні dashboard для існуючих лідів
+    # Оновлюємо по 100 лідів за раз (тільки ті, що не мають label, щоб не перевантажувати API)
+    try:
+        updated_count = update_hubspot_stage_labels_for_leads(limit=100, force_update=False)
+        if updated_count:
+            app.logger.info(f"Оновлено hubspot_stage_label для {updated_count} лідів при завантаженні dashboard")
+    except Exception as e:
+        app.logger.error(f"Помилка оновлення hubspot_stage_label: {e}")
     
     # Імпортуємо необхідні функції для сортування
     from sqlalchemy import func, case
@@ -4080,6 +4205,13 @@ def fetch_all_deals():
     
     try:
         result = fetch_all_deals_from_hubspot()
+        
+        # Після завантаження deals оновлюємо hubspot_stage_label для всіх лідів
+        try:
+            update_hubspot_stage_labels_for_leads(limit=500, force_update=True)
+        except Exception as e:
+            app.logger.error(f"Помилка оновлення hubspot_stage_label після завантаження deals: {e}")
+        
         return jsonify({
             'success': True,
             'message': f'Завантажено: створено {result.get("created", 0)}, оновлено {result.get("updated", 0)}, помилок {result.get("errors", 0)}',
@@ -4090,6 +4222,28 @@ def fetch_all_deals():
         })
     except Exception as e:
         app.logger.error(f"Помилка завантаження deals: {e}")
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
+
+@app.route('/api/hubspot/update-stage-labels', methods=['POST'])
+@login_required
+def update_stage_labels():
+    """Ручне оновлення hubspot_stage_label для всіх лідів з hubspot_deal_id"""
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Тільки адміністратор може оновлювати статуси'})
+    
+    if not hubspot_client:
+        return jsonify({'success': False, 'message': 'HubSpot API не налаштований'})
+    
+    try:
+        # Оновлюємо всі ліди з hubspot_deal_id
+        updated = update_hubspot_stage_labels_for_leads(limit=1000, force_update=True)
+        return jsonify({
+            'success': True,
+            'message': 'Статуси успішно оновлено'
+        })
+    except Exception as e:
+        app.logger.error(f"Помилка оновлення статусів: {e}")
         traceback.print_exc()
         return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
 
@@ -4955,10 +5109,10 @@ def get_hubspot_stages():
             'pipeline_stages': stages_info,
             'current_stages_usage': current_stages,
             'current_mapping': {
-                '3204738258': 'new (Новая заявка)',
-                '3204738259': 'contacted (Контакт встановлено)',
-                '3204738261': 'qualified (Назначена встреча)',
-                '3204738262': 'qualified (Встреча проведена)',
+                '3204738258': 'new (Запрос получен)',
+                '3204738259': 'contacted (Отправлены варианты/Передан на партнеров)',
+                '3204738261': 'qualified (Назначена встреча/тур)',
+                '3204738262': 'qualified (Встреча/тур проведены)',
                 '3204738265': 'qualified (Переговоры)',
                 '3204738266': 'qualified (Задаток)',
                 '3204738267': 'closed (Сделка закрыта)'
