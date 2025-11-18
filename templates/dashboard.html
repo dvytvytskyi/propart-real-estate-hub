@@ -191,24 +191,36 @@
                                 <div>
                                     {% if lead.hubspot_stage_label %}
                                         {# Показуємо ТІЛЬКИ детальний статус з HubSpot #}
-                                        <span class="status-badge {{ lead.status }}" style="text-transform: none !important; font-size: 0.75rem;">
-                                            {% if lead.status == 'new' %}
-                                                <i class="fas fa-circle"></i>
-                                            {% elif lead.status == 'contacted' %}
-                                                <i class="fas fa-phone"></i>
-                                            {% elif lead.status == 'qualified' %}
-                                                <i class="fas fa-check-circle"></i>
-                                            {% elif lead.status == 'closed' %}
-                                                <i class="fas fa-handshake"></i>
-                                            {% else %}
-                                                <i class="fas fa-question-circle"></i>
-                                            {% endif %}
+                                        {% if lead.status == 'new' %}
+                                        <span class="status-badge new" style="background: #fee2e2 !important; color: #991b1b !important; border: 1px solid #fca5a5 !important; text-transform: none !important; font-size: 0.75rem;">
+                                            <i class="fas fa-circle"></i>
                                             <span style="text-transform: none !important;">{{ lead.hubspot_stage_label }}</span>
                                         </span>
+                                        {% elif lead.status == 'contacted' %}
+                                        <span class="status-badge contacted" style="text-transform: none !important; font-size: 0.75rem;">
+                                            <i class="fas fa-phone"></i>
+                                            <span style="text-transform: none !important;">{{ lead.hubspot_stage_label }}</span>
+                                        </span>
+                                        {% elif lead.status == 'qualified' %}
+                                        <span class="status-badge qualified" style="text-transform: none !important; font-size: 0.75rem;">
+                                            <i class="fas fa-check-circle"></i>
+                                            <span style="text-transform: none !important;">{{ lead.hubspot_stage_label }}</span>
+                                        </span>
+                                        {% elif lead.status == 'closed' %}
+                                        <span class="status-badge closed" style="text-transform: none !important; font-size: 0.75rem;">
+                                            <i class="fas fa-handshake"></i>
+                                            <span style="text-transform: none !important;">{{ lead.hubspot_stage_label }}</span>
+                                        </span>
+                                        {% else %}
+                                        <span class="status-badge default" style="text-transform: none !important; font-size: 0.75rem;">
+                                            <i class="fas fa-question-circle"></i>
+                                            <span style="text-transform: none !important;">{{ lead.hubspot_stage_label }}</span>
+                                        </span>
+                                        {% endif %}
                                     {% elif lead.hubspot_deal_id %}
                                         {# Якщо є hubspot_deal_id, але немає label - показуємо загальний статус #}
                                         {% if lead.status == 'new' %}
-                                            <span class="status-badge new">
+                                            <span class="status-badge new" style="background: #fee2e2 !important; color: #991b1b !important; border: 1px solid #fca5a5 !important;">
                                                 <i class="fas fa-circle"></i>
                                                 <span>Новий</span>
                                             </span>
@@ -236,7 +248,7 @@
                                     {% else %}
                                         {# Fallback на перекладений статус, якщо немає label з HubSpot #}
                                         {% if lead.status == 'new' %}
-                                            <span class="status-badge new">
+                                            <span class="status-badge new" style="background: #fee2e2 !important; color: #991b1b !important; border: 1px solid #fca5a5 !important;">
                                                 <i class="fas fa-circle"></i>
                                                 <span>Новий</span>
                                             </span>
