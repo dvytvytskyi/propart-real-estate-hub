@@ -3974,8 +3974,9 @@ def create_lead_comment(lead_id):
                             # Тепер створюємо асоціацію через окремий запит (v3 API)
                             try:
                                 # Правильний формат для HubSpot v3 API associations
-                                # PUT /crm/v3/objects/notes/{noteId}/associations/deal/{dealId}/note_to_deal
-                                assoc_url = f"https://api.hubapi.com/crm/v3/objects/notes/{hubspot_note_id}/associations/deal/{lead.hubspot_deal_id}/note_to_deal"
+                                # PUT /crm/v3/objects/notes/{noteId}/associations/deal/{dealId}/214
+                                # 214 - це тип асоціації для NOTE_TO_DEAL
+                                assoc_url = f"https://api.hubapi.com/crm/v3/objects/notes/{hubspot_note_id}/associations/deal/{lead.hubspot_deal_id}/214"
                                 
                                 app.logger.info(f"📝 Створення асоціації note {hubspot_note_id} з deal {lead.hubspot_deal_id}")
                                 app.logger.info(f"   URL: {assoc_url}")
@@ -4029,7 +4030,9 @@ def create_lead_comment(lead_id):
                             # Асоціюємо через окремий запит (v3 API)
                             try:
                                 # Правильний формат для HubSpot v3 API associations
-                                assoc_url = f"https://api.hubapi.com/crm/v3/objects/notes/{hubspot_note.id}/associations/deal/{lead.hubspot_deal_id}/note_to_deal"
+                                # PUT /crm/v3/objects/notes/{noteId}/associations/deal/{dealId}/214
+                                # 214 - це тип асоціації для NOTE_TO_DEAL
+                                assoc_url = f"https://api.hubapi.com/crm/v3/objects/notes/{hubspot_note.id}/associations/deal/{lead.hubspot_deal_id}/214"
                                 assoc_headers = {
                                     "Authorization": f"Bearer {hubspot_api_key}",
                                     "Content-Type": "application/json"

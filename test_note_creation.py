@@ -89,8 +89,9 @@ def test_note_creation():
             
             # 4. Створюємо асоціацію з deal через v3 API
             print("🔗 Створення асоціації note з deal через v3 API...")
-            # Правильний формат: PUT /crm/v3/objects/notes/{noteId}/associations/deal/{dealId}/note_to_deal
-            assoc_url = f"https://api.hubapi.com/crm/v3/objects/notes/{note_id}/associations/deal/{lead.hubspot_deal_id}/note_to_deal"
+            # Правильний формат: PUT /crm/v3/objects/notes/{noteId}/associations/deal/{dealId}/214
+            # 214 - це тип асоціації для NOTE_TO_DEAL
+            assoc_url = f"https://api.hubapi.com/crm/v3/objects/notes/{note_id}/associations/deal/{lead.hubspot_deal_id}/214"
             
             print(f"   URL: {assoc_url}")
             print(f"   Method: PUT (без body)")
