@@ -1,0 +1,61 @@
+# Перевірка hubspot_deal_id для ліда "тест комент"
+
+# Після підключення до сервера виконайте:
+
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub
+
+# Перевірте лід "тест комент"
+python3 << 'EOF'
+from app import app, db, Lead, Comment
+with app.app_context():
+    # Знайдіть лід за назвою
+    lead = Lead.query.filter_by(deal_name="тест комент").first()
+    
+    if not lead:
+        # Спробуйте знайти за частиною назви
+        leads = Lead.query.filter(Lead.deal_name.like("%тест%")).all()
+        print(f"Знайдено {len(leads)} лідів з 'тест' в назві:")
+        for l in leads:
+            print(f"  - ID: {l.id}, deal_name: '{l.deal_name}'")
+        if leads:
+            lead = leads[0]
+            print(f"\nВикористовуємо перший: ID={lead.id}")
+    
+    if lead:
+        print("=" * 80)
+        print(f"ЛІД: {lead.deal_name}")
+        print("=" * 80)
+        print(f"ID: {lead.id}")
+        print(f"Email: {lead.email}")
+        print(f"Phone: {lead.phone}")
+        print(f"hubspot_contact_id: {lead.hubspot_contact_id or '❌ НЕ ВСТАНОВЛЕНО'}")
+        print(f"hubspot_deal_id: {lead.hubspot_deal_id or '❌ НЕ ВСТАНОВЛЕНО'}")
+        
+        if not lead.hubspot_deal_id:
+            print("\n⚠️  ПРОБЛЕМА: Лід не має hubspot_deal_id!")
+            print("   Це означає, що синхронізація коментарів з HubSpot не працює.")
+            print("   Коментарі зберігаються тільки локально.")
+        else:
+            print(f"\n✅ Лід має hubspot_deal_id: {lead.hubspot_deal_id}")
+        
+        # Перевірте коментарі
+        comments = Comment.query.filter_by(lead_id=lead.id).order_by(Comment.created_at.desc()).all()
+        print(f"\nКоментарів: {len(comments)}")
+        for c in comments:
+            print(f"\n  Коментар ID: {c.id}")
+            print(f"    Створено: {c.created_at}")
+            print(f"    hubspot_note_id: {c.hubspot_note_id or '❌ НЕ СИНХРОНІЗОВАНО'}")
+            print(f"    Текст: {c.content[:100]}...")
+    else:
+        print("❌ Лід не знайдено")
+        print("\nОстанні 10 лідів:")
+        leads = Lead.query.order_by(Lead.created_at.desc()).limit(10).all()
+        for l in leads:
+            print(f"  - ID: {l.id}, deal_name: '{l.deal_name}', hubspot_deal_id: {l.hubspot_deal_id or 'НЕМАЄ'}")
+EOF
+
+# Перевірте логи після останнього додавання коментаря
+echo ""
+echo "Останні логи про коментарі:"
+tail -200 logs/propart.log | grep -i "коментар\|comment\|hubspot_deal_id\|Перевірка умов" | tail -20
+
