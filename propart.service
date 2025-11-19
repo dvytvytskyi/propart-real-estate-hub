@@ -8,11 +8,11 @@ Type=notify
 User=www-data
 Group=www-data
 RuntimeDirectory=propart
-WorkingDirectory=/var/www/propart
-Environment="PATH=/var/www/propart/venv/bin"
-EnvironmentFile=/var/www/propart/.env
-ExecStart=/var/www/propart/venv/bin/gunicorn \
-          --config /var/www/propart/gunicorn_config.py \
+WorkingDirectory=/home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub
+Environment="PATH=/home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub/venv/bin"
+EnvironmentFile=/home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub/.env
+ExecStart=/home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub/venv/bin/gunicorn \
+          --config /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub/gunicorn_config.py \
           --bind 127.0.0.1:8000 \
           run:app
 ExecReload=/bin/kill -s HUP $MAINPID
@@ -27,7 +27,7 @@ NoNewPrivileges=true
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/www/propart /var/log/propart /var/run/propart
+ReadWritePaths=/home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub /var/log/propart /var/run/propart
 
 [Install]
 WantedBy=multi-user.target
