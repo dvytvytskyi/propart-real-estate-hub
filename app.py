@@ -99,6 +99,28 @@ setup_logging(app)
 csrf = CSRFProtect(app)
 app.logger.info("✅ CSRF захист активовано")
 
+# Обробка помилок CSRF
+@csrf.error_handler
+def csrf_error(reason):
+    """Обробка помилок CSRF"""
+    app.logger.warning(f"⚠️ CSRF помилка: {reason}")
+    app.logger.warning(f"   Request path: {request.path}")
+    app.logger.warning(f"   Request method: {request.method}")
+    app.logger.warning(f"   CSRF token в form: {bool(request.form.get('csrf_token'))}")
+    app.logger.warning(f"   CSRF token в headers: {bool(request.headers.get('X-CSRFToken'))}")
+    
+    # Для логіну показуємо дружнє повідомлення
+    if request.path == '/login' and request.method == 'POST':
+        flash('Помилка безпеки. Будь ласка, оновіть сторінку та спробуйте ще раз.', 'error')
+        return render_template('login.html'), 400
+    
+    # Для інших запитів повертаємо JSON або HTML помилку
+    if request.is_json or request.path.startswith('/api/'):
+        return jsonify({'error': 'CSRF token missing or invalid', 'reason': reason}), 400
+    else:
+        flash('Помилка безпеки. Будь ласка, оновіть сторінку та спробуйте ще раз.', 'error')
+        return render_template('error.html', error='Помилка безпеки'), 400
+
 # ===== БЕЗПЕКА: Rate Limiting =====
 limiter = Limiter(
     app=app,
@@ -2626,42 +2648,62 @@ def index():
 def login():
     """Логін з rate limiting (максимум 10 спроб на хвилину)"""
     if current_user.is_authenticated:
+        app.logger.info(f"🔍 Login: Користувач {current_user.username} вже авторизований, перенаправляю на dashboard")
         return redirect(url_for('dashboard'))
     
     if request.method == 'POST':
+        # Перевіряємо CSRF токен
+        csrf_token_received = request.form.get('csrf_token')
+        app.logger.debug(f"🔍 Login: CSRF токен отримано: {bool(csrf_token_received)}")
+        
         username = request.form.get('username')
         password = request.form.get('password')
+        
+        app.logger.info(f"🔍 Login: Спроба входу для користувача '{username}'")
         
         if username and password:
             user = User.query.filter_by(username=username).first()
             
             if user:
+                app.logger.info(f"🔍 Login: Користувач '{username}' знайдено (ID: {user.id}, role: {user.role}, active: {user.is_active})")
+                
                 # Перевіряємо, чи активний акаунт
                 if not user.is_active:
+                    app.logger.warning(f"⚠️ Login: Акаунт '{username}' деактивований")
                     flash('Ваш акаунт деактивований. Зверніться до адміністратора.')
                     return render_template('login.html')
                 
                 # Перевіряємо, чи не заблокований акаунт
                 if user.is_account_locked():
+                    app.logger.warning(f"⚠️ Login: Акаунт '{username}' заблокований до {user.locked_until}")
                     flash('Ваш акаунт тимчасово заблокований через невдалі спроби входу.')
                     return render_template('login.html')
                 
                 # Перевіряємо пароль
                 if user.check_password(password):
                     # Успішний вхід
-                    user.last_login = get_ukraine_time()
-                    user.reset_login_attempts()
-                    db.session.commit()
-                    login_user(user)
-                    return redirect(url_for('dashboard'), code=302)
+                    app.logger.info(f"✅ Login: Успішний вхід для користувача '{username}' (ID: {user.id}, role: {user.role})")
+                    try:
+                        user.last_login = get_ukraine_time()
+                        user.reset_login_attempts()
+                        db.session.commit()
+                        login_user(user)
+                        app.logger.info(f"✅ Login: Користувач '{username}' успішно авторизований, перенаправляю на dashboard")
+                        return redirect(url_for('dashboard'), code=302)
+                    except Exception as e:
+                        app.logger.error(f"❌ Login: Помилка при збереженні даних для користувача '{username}': {e}")
+                        flash('Виникла помилка при вході. Спробуйте ще раз.')
                 else:
                     # Невдалий вхід
+                    app.logger.warning(f"⚠️ Login: Невірний пароль для користувача '{username}' (спроба {user.login_attempts + 1})")
                     user.increment_login_attempts()
                     db.session.commit()
                     flash('Невірне ім\'я користувача або пароль')
             else:
+                app.logger.warning(f"⚠️ Login: Користувач '{username}' не знайдено")
                 flash('Невірне ім\'я користувача або пароль')
         else:
+            app.logger.warning(f"⚠️ Login: Порожні поля (username: {bool(username)}, password: {bool(password)})")
             flash('Будь ласка, заповніть всі поля')
     
     response = make_response(render_template('login.html'))
@@ -3166,122 +3208,146 @@ def dashboard_test():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    # ⚡ ОПТИМІЗАЦІЯ: Видалено автоматичну синхронізацію з HubSpot
-    # Тепер синхронізація доступна через окрему кнопку
-    
-    # Оновлюємо hubspot_stage_label для лідів, які мають hubspot_deal_id
-    # Це робиться при завантаженні dashboard для існуючих лідів
-    # Оновлюємо по 100 лідів за раз (тільки ті, що не мають label, щоб не перевантажувати API)
+    """Dashboard з обробкою помилок для агентів"""
     try:
-        updated_count = update_hubspot_stage_labels_for_leads(limit=100, force_update=False)
-        if updated_count:
-            app.logger.info(f"Оновлено hubspot_stage_label для {updated_count} лідів при завантаженні dashboard")
+        # ⚡ ОПТИМІЗАЦІЯ: Видалено автоматичну синхронізацію з HubSpot
+        # Тепер синхронізація доступна через окрему кнопку
+        
+        app.logger.info(f"🔍 Dashboard: Користувач {current_user.username} (ID: {current_user.id}, role: {current_user.role}) заходить на dashboard")
+        
+        # Оновлюємо hubspot_stage_label для лідів, які мають hubspot_deal_id
+        # Це робиться при завантаженні dashboard для існуючих лідів
+        # Оновлюємо по 100 лідів за раз (тільки ті, що не мають label, щоб не перевантажувати API)
+        try:
+            updated_count = update_hubspot_stage_labels_for_leads(limit=100, force_update=False)
+            if updated_count:
+                app.logger.info(f"Оновлено hubspot_stage_label для {updated_count} лідів при завантаженні dashboard")
+        except Exception as e:
+            app.logger.error(f"Помилка оновлення hubspot_stage_label: {e}")
+        
+        # Імпортуємо необхідні функції для сортування
+        from sqlalchemy import func, case
+        
+        # Отримуємо параметри сортування та пагінації з URL
+        sort_by = request.args.get('sort_by', 'created_at')  # За замовчуванням сортуємо по даті додавання
+        order = request.args.get('order', 'desc')  # За замовчуванням - від нових до старих
+        page = request.args.get('page', 1, type=int)  # Номер сторінки
+        per_page = 20  # Кількість лідів на сторінку
+        
+        # Оптимізований запит: отримуємо тільки необхідні ліди
+        if current_user.role == 'admin':
+            # Адмін бачить ВСІ ліди в системі (для управління)
+            leads_query = Lead.query
+            app.logger.debug(f"Dashboard: Адмін - завантаження всіх лідів")
+        else:
+            # Агент бачить тільки свої ліди
+            leads_query = Lead.query.filter_by(agent_id=current_user.id)
+            app.logger.debug(f"Dashboard: Агент {current_user.id} - завантаження своїх лідів")
+        
+        # Застосовуємо сортування
+        if sort_by == 'status':
+            # Для статусу використовуємо custom порядок: new -> contacted -> qualified -> closed
+            status_order = case(
+                (Lead.status == 'new', 1),
+                (Lead.status == 'contacted', 2),
+                (Lead.status == 'qualified', 3),
+                (Lead.status == 'closed', 4),
+                else_=5
+            )
+            if order == 'asc':
+                leads_query = leads_query.order_by(status_order.asc())
+            else:
+                leads_query = leads_query.order_by(status_order.desc())
+        elif sort_by == 'created_at':
+            if order == 'asc':
+                leads_query = leads_query.order_by(Lead.created_at.asc())
+            else:
+                leads_query = leads_query.order_by(Lead.created_at.desc())
+        elif sort_by == 'updated_at':
+            if order == 'asc':
+                leads_query = leads_query.order_by(Lead.updated_at.asc())
+            else:
+                leads_query = leads_query.order_by(Lead.updated_at.desc())
+        
+        # Отримуємо ліди з пагінацією
+        pagination = leads_query.paginate(page=page, per_page=per_page, error_out=False)
+        leads = pagination.items
+        
+        # ⚡ ОПТИМІЗАЦІЯ: Використовуємо SQL агрегацію замість Python циклів
+        # Базовий запит для метрик - рахуємо ті самі ліди, що показує пагінація
+        if current_user.role == 'admin':
+            # Адмін: рахуємо ВСІ ліди в системі (як і в пагінації)
+            metrics_query = db.session.query(
+                func.count(Lead.id).label('total_leads'),
+                func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
+                func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
+                func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
+            )
+        else:
+            # Агент: рахуємо тільки свої ліди (як і в пагінації)
+            metrics_query = db.session.query(
+                func.count(Lead.id).label('total_leads'),
+                func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
+                func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
+                func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
+            ).filter(Lead.agent_id == current_user.id)
+        
+        result = metrics_query.first()
+        
+        total_leads = result.total_leads or 0
+        active_leads = result.active_leads or 0
+        closed_leads = result.closed_leads or 0
+        transferred_leads = result.transferred_leads or 0
+        
+        # Сума бюджетів (потребує завантаження даних, бо budget - строка)
+        # Для адміна рахуємо по всіх лідах, для агента - тільки по своїх
+        if current_user.role == 'admin':
+            # Адмін: рахуємо по всіх лідах в системі
+            all_leads_for_budget = Lead.query.all()
+        else:
+            # Агент: рахуємо тільки по своїх лідах
+            all_leads_for_budget = Lead.query.filter_by(agent_id=current_user.id).all()
+        
+        total_budget = sum(get_budget_value(lead.budget) for lead in all_leads_for_budget)
+        avg_budget = total_budget / total_leads if total_leads > 0 else 0
+        
+        # Конверсія (відсоток закритих лідів)
+        conversion_rate = (closed_leads / total_leads * 100) if total_leads > 0 else 0
+        
+        # Ціль: 10,000 поінтів
+        target_points = 10000
+        goal_percentage = min(100, (current_user.points / target_points * 100)) if target_points > 0 else 0
+    
+        metrics = {
+            'total_leads': total_leads,
+            'active_leads': active_leads,
+            'closed_leads': closed_leads,
+            'transferred_leads': transferred_leads,
+            'total_budget': total_budget,
+            'avg_budget': avg_budget,
+            'conversion_rate': conversion_rate,
+            'goal_percentage': goal_percentage
+        }
+        
+        app.logger.info(f"✅ Dashboard: Успішно завантажено {len(leads)} лідів для користувача {current_user.username}")
+        return render_template('dashboard.html', leads=leads, metrics=metrics, sort_by=sort_by, order=order, pagination=pagination)
+    
     except Exception as e:
-        app.logger.error(f"Помилка оновлення hubspot_stage_label: {e}")
-    
-    # Імпортуємо необхідні функції для сортування
-    from sqlalchemy import func, case
-    
-    # Отримуємо параметри сортування та пагінації з URL
-    sort_by = request.args.get('sort_by', 'created_at')  # За замовчуванням сортуємо по даті додавання
-    order = request.args.get('order', 'desc')  # За замовчуванням - від нових до старих
-    page = request.args.get('page', 1, type=int)  # Номер сторінки
-    per_page = 20  # Кількість лідів на сторінку
-    
-    # Оптимізований запит: отримуємо тільки необхідні ліди
-    if current_user.role == 'admin':
-        # Адмін бачить ВСІ ліди в системі (для управління)
-        leads_query = Lead.query
-    else:
-        # Агент бачить тільки свої ліди
-        leads_query = Lead.query.filter_by(agent_id=current_user.id)
-    
-    # Застосовуємо сортування
-    if sort_by == 'status':
-        # Для статусу використовуємо custom порядок: new -> contacted -> qualified -> closed
-        status_order = case(
-            (Lead.status == 'new', 1),
-            (Lead.status == 'contacted', 2),
-            (Lead.status == 'qualified', 3),
-            (Lead.status == 'closed', 4),
-            else_=5
-        )
-        if order == 'asc':
-            leads_query = leads_query.order_by(status_order.asc())
-        else:
-            leads_query = leads_query.order_by(status_order.desc())
-    elif sort_by == 'created_at':
-        if order == 'asc':
-            leads_query = leads_query.order_by(Lead.created_at.asc())
-        else:
-            leads_query = leads_query.order_by(Lead.created_at.desc())
-    elif sort_by == 'updated_at':
-        if order == 'asc':
-            leads_query = leads_query.order_by(Lead.updated_at.asc())
-        else:
-            leads_query = leads_query.order_by(Lead.updated_at.desc())
-    
-    # Отримуємо ліди з пагінацією
-    pagination = leads_query.paginate(page=page, per_page=per_page, error_out=False)
-    leads = pagination.items
-    
-    # ⚡ ОПТИМІЗАЦІЯ: Використовуємо SQL агрегацію замість Python циклів
-    # Базовий запит для метрик - рахуємо ті самі ліди, що показує пагінація
-    if current_user.role == 'admin':
-        # Адмін: рахуємо ВСІ ліди в системі (як і в пагінації)
-        metrics_query = db.session.query(
-            func.count(Lead.id).label('total_leads'),
-            func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
-            func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
-            func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
-        )
-    else:
-        # Агент: рахуємо тільки свої ліди (як і в пагінації)
-        metrics_query = db.session.query(
-            func.count(Lead.id).label('total_leads'),
-            func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
-            func.count(case((Lead.status == 'closed', 1))).label('closed_leads'),
-            func.count(case((Lead.is_transferred == True, 1))).label('transferred_leads')
-        ).filter(Lead.agent_id == current_user.id)
-    
-    result = metrics_query.first()
-    
-    total_leads = result.total_leads or 0
-    active_leads = result.active_leads or 0
-    closed_leads = result.closed_leads or 0
-    transferred_leads = result.transferred_leads or 0
-    
-    # Сума бюджетів (потребує завантаження даних, бо budget - строка)
-    # Для адміна рахуємо по всіх лідах, для агента - тільки по своїх
-    if current_user.role == 'admin':
-        # Адмін: рахуємо по всіх лідах в системі
-        all_leads_for_budget = Lead.query.all()
-    else:
-        # Агент: рахуємо тільки по своїх лідах
-        all_leads_for_budget = Lead.query.filter_by(agent_id=current_user.id).all()
-    
-    total_budget = sum(get_budget_value(lead.budget) for lead in all_leads_for_budget)
-    avg_budget = total_budget / total_leads if total_leads > 0 else 0
-    
-    # Конверсія (відсоток закритих лідів)
-    conversion_rate = (closed_leads / total_leads * 100) if total_leads > 0 else 0
-    
-    # Ціль: 10,000 поінтів
-    target_points = 10000
-    goal_percentage = min(100, (current_user.points / target_points * 100)) if target_points > 0 else 0
-    
-    metrics = {
-        'total_leads': total_leads,
-        'active_leads': active_leads,
-        'closed_leads': closed_leads,
-        'transferred_leads': transferred_leads,
-        'total_budget': total_budget,
-        'avg_budget': avg_budget,
-        'conversion_rate': conversion_rate,
-        'goal_percentage': goal_percentage
-    }
-    
-    return render_template('dashboard.html', leads=leads, metrics=metrics, sort_by=sort_by, order=order, pagination=pagination)
+        app.logger.error(f"❌ Помилка в dashboard для користувача {current_user.username if current_user.is_authenticated else 'неавторизований'}: {e}")
+        app.logger.error(traceback.format_exc())
+        flash('Виникла помилка при завантаженні dashboard. Спробуйте оновити сторінку або зверніться до адміністратора.', 'error')
+        # Повертаємо порожній dashboard з помилкою
+        empty_metrics = {
+            'total_leads': 0,
+            'active_leads': 0,
+            'closed_leads': 0,
+            'transferred_leads': 0,
+            'total_budget': 0,
+            'avg_budget': 0,
+            'conversion_rate': 0,
+            'goal_percentage': 0
+        }
+        return render_template('dashboard.html', leads=[], metrics=empty_metrics, sort_by='created_at', order='desc', pagination=None)
 
 @app.route('/add_lead', methods=['GET', 'POST'])
 @login_required
@@ -3828,7 +3894,22 @@ def create_lead_comment(lead_id):
         
         # Створюємо нотатку в HubSpot (якщо є deal_id)
         # ВАЖЛИВО: Кожна відповідь створює ОКРЕМУ нотатку в HubSpot (не оновлює існуючу)
-        if lead.hubspot_deal_id and hubspot_client:
+        app.logger.info(f"📝 Перевірка умов для синхронізації з HubSpot:")
+        app.logger.info(f"   lead.hubspot_deal_id: {lead.hubspot_deal_id}")
+        app.logger.info(f"   hubspot_client: {hubspot_client is not None}")
+        app.logger.info(f"   HUBSPOT_API_KEY: {bool(HUBSPOT_API_KEY)}")
+        
+        if not lead.hubspot_deal_id:
+            app.logger.warning(f"⚠️ Лід {lead_id} не має hubspot_deal_id, синхронізація з HubSpot пропущена")
+            print(f"⚠️ Лід {lead_id} не має hubspot_deal_id, синхронізація з HubSpot пропущена")
+        elif not hubspot_client:
+            app.logger.warning(f"⚠️ hubspot_client не ініціалізовано, синхронізація з HubSpot пропущена")
+            print(f"⚠️ hubspot_client не ініціалізовано, синхронізація з HubSpot пропущена")
+        elif not HUBSPOT_API_KEY:
+            app.logger.warning(f"⚠️ HUBSPOT_API_KEY не встановлено, синхронізація з HubSpot пропущена")
+            print(f"⚠️ HUBSPOT_API_KEY не встановлено, синхронізація з HubSpot пропущена")
+        
+        if lead.hubspot_deal_id and hubspot_client and HUBSPOT_API_KEY:
             try:
                 from hubspot.crm.objects.notes import SimplePublicObjectInput
                 from datetime import datetime, timezone
@@ -3836,7 +3917,7 @@ def create_lead_comment(lead_id):
                 # Формуємо текст нотатки (без email в тексті)
                 # ВАЖЛИВО: HubSpot не підтримує тредовані нотатки, тому кожен коментар = окрема нотатка
                 note_body = content
-                app.logger.info(f"📝 Створюється нотатка в HubSpot для коментаря")
+                app.logger.info(f"📝 Створюється нотатка в HubSpot для коментаря (deal_id: {lead.hubspot_deal_id})")
                 
                 # HubSpot вимагає hs_timestamp в форматі ISO8601
                 current_timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -3853,98 +3934,109 @@ def create_lead_comment(lead_id):
                     "Content-Type": "application/json"
                 }
                 
-                # Тіло запиту з асоціацією до deal
-                # Правильна назва поля: hs_note_body (з підкресленням), не hsnotebody
-                # Додаємо email як окреме поле
-                data = {
+                # Створюємо нотатку БЕЗ асоціації в одному запиті (v3 API не підтримує асоціації при створенні)
+                note_data = {
                     "properties": {
-                        "hs_note_body": note_body,  # Текст коментаря без email
-                        "hs_timestamp": current_timestamp,
-                        "author_email": current_user.email  # Email як окреме поле
-                    },
-                    "associations": [{
-                        "to": {
-                            "id": lead.hubspot_deal_id
-                        },
-                        "types": [{
-                            "associationCategory": "HUBSPOT_DEFINED",
-                            "associationTypeId": 214  # Для notes-deals
-                        }]
-                    }]
+                        "hs_note_body": note_body,
+                        "hs_timestamp": current_timestamp
+                    }
                 }
                 
                 app.logger.info(f"📝 Створення нотатки в HubSpot для deal {lead.hubspot_deal_id}")
-                app.logger.info(f"   Тіло запиту: {data}")
+                app.logger.info(f"   Тіло запиту: {note_data}")
                 
-                response = requests.post(url, headers=headers, json=data)
+                response = requests.post(url, headers=headers, json=note_data)
                 
                 app.logger.info(f"📥 Відповідь HubSpot API: {response.status_code}")
-                app.logger.info(f"   Response body: {response.text[:500] if response.text else 'Empty'}")
+                app.logger.info(f"   Response headers: {dict(response.headers)}")
+                app.logger.info(f"   Response body: {response.text[:1000] if response.text else 'Empty'}")
                 
                 if response.status_code in [200, 201]:
-                    response_data = response.json()
-                    hubspot_note_id = response_data.get('id')
-                    if hubspot_note_id:
-                        comment.hubspot_note_id = str(hubspot_note_id)
-                        app.logger.info(f"✅ Нотатка створена та асоційована з deal в HubSpot: {hubspot_note_id}")
-                        print(f"✅ Нотатка створена та асоційована з deal в HubSpot: {hubspot_note_id}")
-                        
-                        # Додатково перевіряємо, чи асоціація дійсно створена
-                        # Інколи асоціація в одному запиті не працює, робимо окремий запит
-                        try:
-                            assoc_url = f"https://api.hubapi.com/crm/v4/objects/notes/{hubspot_note_id}/associations/deal/{lead.hubspot_deal_id}"
-                            assoc_data = [{
-                                "associationCategory": "HUBSPOT_DEFINED",
-                                "associationTypeId": 214
-                            }]
-                            assoc_response = requests.put(assoc_url, headers=headers, json=assoc_data)
-                            if assoc_response.status_code in [200, 201]:
-                                app.logger.info(f"✅ Асоціація підтверджена через окремий запит")
-                            else:
-                                app.logger.warning(f"⚠️ Асоціація не підтверджена: {assoc_response.status_code} - {assoc_response.text}")
-                        except Exception as assoc_check_error:
-                            app.logger.warning(f"⚠️ Помилка перевірки асоціації: {assoc_check_error}")
-                    else:
-                        app.logger.warning(f"⚠️ Нотатка створена, але ID не отримано: {response_data}")
-                        print(f"⚠️ Нотатка створена, але ID не отримано")
+                    try:
+                        response_data = response.json()
+                        hubspot_note_id = response_data.get('id')
+                        if hubspot_note_id:
+                            comment.hubspot_note_id = str(hubspot_note_id)
+                            app.logger.info(f"✅ Нотатка створена в HubSpot: {hubspot_note_id}")
+                            print(f"✅ Нотатка створена в HubSpot: {hubspot_note_id}")
+                            
+                            # Тепер створюємо асоціацію через окремий запит (v4 API)
+                            try:
+                                assoc_url = f"https://api.hubapi.com/crm/v4/objects/notes/{hubspot_note_id}/associations/deal/{lead.hubspot_deal_id}"
+                                assoc_data = [{
+                                    "associationCategory": "HUBSPOT_DEFINED",
+                                    "associationTypeId": 214  # Для notes-deals
+                                }]
+                                assoc_response = requests.put(assoc_url, headers=headers, json=assoc_data)
+                                
+                                app.logger.info(f"📥 Відповідь HubSpot API (асоціація): {assoc_response.status_code}")
+                                app.logger.info(f"   Response body: {assoc_response.text[:500] if assoc_response.text else 'Empty'}")
+                                
+                                if assoc_response.status_code in [200, 201, 204]:
+                                    app.logger.info(f"✅ Нотатка асоційована з deal в HubSpot: {hubspot_note_id}")
+                                    print(f"✅ Нотатка створена та асоційована з deal в HubSpot: {hubspot_note_id}")
+                                else:
+                                    app.logger.error(f"❌ Асоціація не вдалася: {assoc_response.status_code}")
+                                    app.logger.error(f"   Response: {assoc_response.text}")
+                                    print(f"❌ Нотатка створена, але асоціація не вдалася: {assoc_response.status_code} - {assoc_response.text[:200]}")
+                                    # Коментар все одно зберігається з hubspot_note_id
+                            except Exception as assoc_error:
+                                app.logger.error(f"❌ Помилка створення асоціації: {assoc_error}")
+                                app.logger.error(f"   Traceback: {traceback.format_exc()}")
+                                print(f"❌ Помилка створення асоціації: {assoc_error}")
+                                # Коментар все одно зберігається з hubspot_note_id
+                        else:
+                            app.logger.error(f"❌ Нотатка створена, але ID не отримано в response_data: {response_data}")
+                            print(f"❌ Нотатка створена, але ID не отримано")
+                    except Exception as json_error:
+                        app.logger.error(f"❌ Помилка парсингу JSON відповіді: {json_error}")
+                        app.logger.error(f"   Response text: {response.text[:500]}")
+                        print(f"❌ Помилка парсингу JSON відповіді: {json_error}")
                 else:
                     # Якщо HTTP запит не працює, спробуємо через SDK як fallback
-                    app.logger.warning(f"⚠️ HTTP запит не вдався ({response.status_code}), спробуємо через SDK: {response.text}")
-                    print(f"⚠️ HTTP запит не вдався, спробуємо через SDK...")
+                    app.logger.error(f"❌ HTTP запит не вдався ({response.status_code})")
+                    app.logger.error(f"   Response: {response.text[:1000]}")
+                    print(f"❌ HTTP запит не вдався ({response.status_code}): {response.text[:200]}")
                     
-                    # Fallback через SDK
-                    note_properties = {
-                        "hs_note_body": note_body,  # Правильна назва поля
-                        "hs_timestamp": current_timestamp,
-                        "author_email": current_user.email  # Email як окреме поле
-                    }
-                    note_input = SimplePublicObjectInput(properties=note_properties)
-                    hubspot_note = hubspot_client.crm.objects.notes.basic_api.create(
-                        simple_public_object_input=note_input
-                    )
-                    
-                    if hubspot_note.id:
-                        comment.hubspot_note_id = str(hubspot_note.id)
+                    try:
+                        # Fallback через SDK
+                        note_properties = {
+                            "hs_note_body": note_body,
+                            "hs_timestamp": current_timestamp
+                        }
+                        note_input = SimplePublicObjectInput(properties=note_properties)
+                        hubspot_note = hubspot_client.crm.objects.notes.basic_api.create(
+                            simple_public_object_input=note_input
+                        )
                         
-                        # Асоціюємо через окремий запит
-                        try:
-                            url = f"https://api.hubapi.com/crm/v4/objects/notes/{hubspot_note.id}/associations/deal/{lead.hubspot_deal_id}"
-                            headers = {
-                                "Authorization": f"Bearer {api_key}",
-                                "Content-Type": "application/json"
-                            }
-                            data = [{
-                                "associationCategory": "HUBSPOT_DEFINED",
-                                "associationTypeId": 214
-                            }]
+                        if hubspot_note.id:
+                            comment.hubspot_note_id = str(hubspot_note.id)
                             
-                            assoc_response = requests.put(url, headers=headers, json=data)
-                            if assoc_response.status_code in [200, 201]:
-                                print(f"✅ Нотатка створена та асоційована з deal (fallback) в HubSpot: {hubspot_note.id}")
-                            else:
-                                app.logger.warning(f"⚠️ Асоціація не вдалася: {assoc_response.status_code} - {assoc_response.text}")
-                        except Exception as assoc_error:
-                            app.logger.warning(f"⚠️ Помилка асоціації: {assoc_error}")
+                            # Асоціюємо через окремий запит (v4 API)
+                            try:
+                                assoc_url = f"https://api.hubapi.com/crm/v4/objects/notes/{hubspot_note.id}/associations/deal/{lead.hubspot_deal_id}"
+                                assoc_headers = {
+                                    "Authorization": f"Bearer {api_key}",
+                                    "Content-Type": "application/json"
+                                }
+                                assoc_data = [{
+                                    "associationCategory": "HUBSPOT_DEFINED",
+                                    "associationTypeId": 214
+                                }]
+                                
+                                assoc_response = requests.put(assoc_url, headers=assoc_headers, json=assoc_data)
+                                if assoc_response.status_code in [200, 201, 204]:
+                                    app.logger.info(f"✅ Нотатка створена та асоційована з deal (fallback) в HubSpot: {hubspot_note.id}")
+                                    print(f"✅ Нотатка створена та асоційована з deal (fallback) в HubSpot: {hubspot_note.id}")
+                                else:
+                                    app.logger.warning(f"⚠️ Асоціація не вдалася: {assoc_response.status_code} - {assoc_response.text}")
+                                    print(f"⚠️ Нотатка створена, але асоціація не вдалася: {assoc_response.status_code}")
+                            except Exception as assoc_error:
+                                app.logger.error(f"❌ Помилка асоціації: {assoc_error}")
+                                print(f"⚠️ Помилка асоціації: {assoc_error}")
+                    except Exception as sdk_error:
+                        app.logger.error(f"❌ Помилка створення нотатки через SDK: {sdk_error}")
+                        print(f"❌ Помилка створення нотатки через SDK: {sdk_error}")
                     
             except Exception as hubspot_error:
                 app.logger.error(f"❌ Помилка створення нотатки в HubSpot: {hubspot_error}")
