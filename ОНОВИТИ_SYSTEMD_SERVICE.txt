@@ -1,0 +1,51 @@
+================================================================
+✅ ОНОВЛЕННЯ SYSTEMD SERVICE З ПРАВИЛЬНИМ ШЛЯХОМ
+================================================================
+
+Проблема: Сервіс запущений з неправильного шляху (/var/www/propart замість правильного)
+
+================================================================
+КОМАНДИ ДЛЯ ВИКОНАННЯ НА СЕРВЕРІ:
+================================================================
+
+# 1. Оновити код
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub
+git pull origin main
+
+# 2. Оновити systemd service файл
+sudo cp propart.service /etc/systemd/system/propart.service
+
+# 3. Перезавантажити systemd
+sudo systemctl daemon-reload
+
+# 4. Перезапустити сервіс
+sudo systemctl restart propart
+
+# 5. Перевірити статус
+sudo systemctl status propart
+
+================================================================
+ПЕРЕВІРКА:
+================================================================
+
+Після оновлення перевірте, що сервіс використовує правильний шлях:
+
+sudo systemctl status propart | grep -i "workingdirectory\|execstart"
+
+Має показувати:
+WorkingDirectory=/home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub
+ExecStart=/home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub/venv/bin/gunicorn
+
+================================================================
+ШВИДКИЙ ВАРІАНТ (всі команди разом):
+================================================================
+
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub && \
+git pull origin main && \
+sudo cp propart.service /etc/systemd/system/propart.service && \
+sudo systemctl daemon-reload && \
+sudo systemctl restart propart && \
+sudo systemctl status propart
+
+================================================================
+

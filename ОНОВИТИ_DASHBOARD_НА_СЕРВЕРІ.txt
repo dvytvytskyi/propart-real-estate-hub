@@ -1,0 +1,70 @@
+==========================================
+ОНОВИТИ DASHBOARD ДЛЯ ШВИДКОСТІ
+==========================================
+
+Проблема: Dashboard завантажує ВСІ ліди для підрахунку бюджету - це дуже повільно!
+
+Виправлення: Замість завантаження всіх лідів використовується SQL агрегація.
+
+На сервері виконайте:
+
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub
+
+# ВАРІАНТ 1: Оновити код з git (якщо зміни закомічені)
+==========================================
+
+git pull
+sudo systemctl restart propart
+
+
+# ВАРІАНТ 2: Вручну виправити код
+==========================================
+
+# Знайдіть рядки ~3310-3320 в app.py і замініть:
+
+# БУЛО (повільно):
+# if current_user.role == 'admin':
+#     all_leads_for_budget = Lead.query.all()
+# else:
+#     all_leads_for_budget = Lead.query.filter_by(agent_id=current_user.id).all()
+# total_budget = sum(get_budget_value(lead.budget) for lead in all_leads_for_budget)
+
+# СТАЛО (швидко):
+# from sqlalchemy import case
+# budget_case = case(
+#     (Lead.budget == 'до 200к', 200000),
+#     (Lead.budget == '200к–500к', 500000),
+#     (Lead.budget == '500к–1млн', 1000000),
+#     (Lead.budget == '1млн+', 2000000),
+#     else_=0
+# )
+# if current_user.role == 'admin':
+#     budget_query = db.session.query(func.sum(budget_case))
+# else:
+#     budget_query = db.session.query(func.sum(budget_case)).filter(Lead.agent_id == current_user.id)
+# total_budget_result = budget_query.scalar()
+# total_budget = total_budget_result if total_budget_result else 0
+
+
+# ПЕРЕВІРКА ПІСЛЯ ОНОВЛЕННЯ
+==========================================
+
+# 1. Перезапустити
+sudo systemctl restart propart
+
+# 2. Перевірити статус
+systemctl status propart | head -10
+
+# 3. Тест швидкості dashboard
+for i in {1..3}; do
+    START=$(date +%s%N)
+    CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 http://localhost:8000/dashboard 2>/dev/null)
+    END=$(date +%s%N)
+    TIME=$((($END - $START) / 1000000))
+    echo "Dashboard запит $i: HTTP $CODE, час: ${TIME}ms"
+done
+
+# Має бути значно швидше (< 1 секунди замість 5-10 секунд)
+
+==========================================
+

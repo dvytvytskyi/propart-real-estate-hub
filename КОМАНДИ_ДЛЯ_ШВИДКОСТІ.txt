@@ -1,0 +1,97 @@
+==========================================
+КОМАНДИ ДЛЯ ШВИДКОГО ВИПРАВЛЕННЯ
+==========================================
+
+На сервері виконайте ці команди:
+
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub
+
+# КРОК 1: Вимкнути автоматичну синхронізацію HubSpot
+==========================================
+
+# Створити скрипт:
+cat > ВИМКНУТИ_ВСЕ_HUBSPOT.sh << 'EOF'
+#!/bin/bash
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub
+cp app.py app.py.backup.$(date +%Y%m%d_%H%M%S)
+sed -i 's/^\([[:space:]]*\)start_background_sync()/\1# ⚡ ВИМКНЕНО: start_background_sync()/' app.py
+sudo systemctl restart propart
+echo "✅ Готово!"
+EOF
+
+chmod +x ВИМКНУТИ_ВСЕ_HUBSPOT.sh
+sudo ./ВИМКНУТИ_ВСЕ_HUBSPOT.sh
+
+
+# КРОК 2: Перевірити що вимкнено
+==========================================
+
+# Перевірити чи є активні виклики:
+grep "start_background_sync" app.py | grep -v "^[[:space:]]*#"
+
+# Має бути порожньо (немає активних викликів)
+
+
+# КРОК 3: Перезапустити всі сервіси
+==========================================
+
+sudo pkill -9 gunicorn 2>/dev/null
+sudo systemctl restart postgresql propart nginx
+sleep 5
+
+
+# КРОК 4: Перевірити швидкість
+==========================================
+
+# Тест швидкості (3 запити):
+for i in {1..3}; do
+    START=$(date +%s%N)
+    CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 http://localhost:8000/ 2>/dev/null)
+    END=$(date +%s%N)
+    TIME=$((($END - $START) / 1000000))
+    echo "Запит $i: HTTP $CODE, час: ${TIME}ms"
+done
+
+
+# КРОК 5: Перевірити логи на повільні запити
+==========================================
+
+# Перевірити останні помилки:
+sudo journalctl -u propart -n 30 --no-pager
+
+# Перевірити повільні запити (якщо є access log):
+if [ -f /var/log/propart/gunicorn_access.log ]; then
+    echo "Повільні запити (>1 секунди):"
+    tail -100 /var/log/propart/gunicorn_access.log | awk '$NF > 1000000 {print}' | tail -5
+fi
+
+
+# ЯКЩО ДОСІ ПОВІЛЬНО
+==========================================
+
+# 1. Перевірити навантаження:
+top -bn1 | head -20
+
+# 2. Перевірити пам'ять:
+free -h
+
+# 3. Перевірити активні підключення до БД:
+sudo -u postgres psql -d real_estate_agents -c "SELECT count(*) FROM pg_stat_activity WHERE datname = 'real_estate_agents';"
+
+# 4. Перевірити повільні SQL запити:
+sudo -u postgres psql -d real_estate_agents -c "SELECT pid, now() - pg_stat_activity.query_start AS duration, query FROM pg_stat_activity WHERE (now() - pg_stat_activity.query_start) > interval '1 second' AND state = 'active';"
+
+
+# ШВИДКЕ ВИПРАВЛЕННЯ (все в одній команді)
+==========================================
+
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub && \
+cp app.py app.py.backup.$(date +%Y%m%d_%H%M%S) && \
+sed -i 's/^\([[:space:]]*\)start_background_sync()/\1# ⚡ ВИМКНЕНО: start_background_sync()/' app.py && \
+sudo pkill -9 gunicorn 2>/dev/null && \
+sudo systemctl restart postgresql propart nginx && \
+sleep 5 && \
+echo "✅ Готово! Перевірте швидкість."
+
+==========================================
+

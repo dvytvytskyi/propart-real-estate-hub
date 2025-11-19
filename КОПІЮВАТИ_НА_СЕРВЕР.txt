@@ -1,0 +1,65 @@
+================================================================
+⚡ КОМАНДИ ДЛЯ ВИКОНАННЯ НА СЕРВЕРІ
+================================================================
+
+Підключіться до сервера:
+ssh root@188.245.228.175
+Пароль: 7NdMqCMV4wtw
+
+================================================================
+ВАРІАНТ 1: Швидкий (скопіюйте всю команду)
+================================================================
+
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub && git pull origin main && source venv/bin/activate && python3 check_comment_sync.py && python3 sync_lead_to_hubspot.py && deactivate && sudo systemctl restart propart
+
+================================================================
+ВАРІАНТ 2: Покроково (якщо потрібно бачити кожен крок)
+================================================================
+
+# Крок 1: Перехід до проекту
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub
+
+# Крок 2: Оновлення коду
+git pull origin main
+
+# Крок 3: Активувати venv
+source venv/bin/activate
+
+# Крок 4: Перевірити лід "тест комент"
+python3 check_comment_sync.py
+
+# Крок 5: Синхронізувати лід (якщо потрібно)
+python3 sync_lead_to_hubspot.py
+
+# Крок 6: Деактивувати venv
+deactivate
+
+# Крок 7: Перезапустити додаток
+sudo systemctl restart propart
+
+================================================================
+ЯКЩО ПОМИЛКА: venv/bin/activate: No such file or directory
+================================================================
+
+# Створити venv
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+deactivate
+
+# Потім поверніться до ВАРІАНТ 1 або ВАРІАНТ 2
+
+================================================================
+ПЕРЕВІРКА ПІСЛЯ ВИКОНАННЯ
+================================================================
+
+# Перевірити статус сервісу
+sudo systemctl status propart
+
+# Переглянути логи
+sudo journalctl -u propart -f
+
+================================================================
+

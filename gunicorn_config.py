@@ -10,14 +10,21 @@ bind = "127.0.0.1:8000"
 backlog = 2048
 
 # Worker Processes
-# Формула: (2 × CPU) + 1
-workers = multiprocessing.cpu_count() * 2 + 1
+# Оптимізовано: для невеликих серверів використовуємо менше workers
+cpu_count = multiprocessing.cpu_count()
+if cpu_count <= 2:
+    workers = 3  # Мінімум 3 workers для стабільності
+elif cpu_count <= 4:
+    workers = cpu_count + 1  # Для 4 CPU: 5 workers
+else:
+    workers = cpu_count * 2 + 1  # Для більших серверів: стандартна формула
+
 worker_class = "sync"
 worker_connections = 1000
 max_requests = 1000
 max_requests_jitter = 50
-timeout = 60
-graceful_timeout = 30
+timeout = 30  # Зменшено з 60 до 30 секунд для швидшого виявлення проблем
+graceful_timeout = 15  # Зменшено з 30 до 15 секунд
 keepalive = 2
 
 # Logging

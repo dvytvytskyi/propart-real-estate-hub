@@ -170,14 +170,17 @@
                                 <div class="agent-cell">
                                     <i class="fas fa-user-circle"></i>
                                     <span>
-                                        {% if lead.notes and "HubSpot Deal Owner:" in lead.notes %}
-                                            {{ lead.notes.split("HubSpot Deal Owner: ")[1].split('\n')[0] }}
-                                        {% elif lead.agent %}
+                                        {% if lead.agent %}
                                             {{ lead.agent.username }} ({{ lead.agent.role }})
                                         {% else %}
                                             Не вказано
                                         {% endif %}
                                     </span>
+                                    {% if lead.notes and "HubSpot Deal Owner:" in lead.notes %}
+                                        <br><small style="color: #64748b; font-size: 0.75rem;">
+                                            HubSpot: {{ lead.notes.split("HubSpot Deal Owner: ")[1].split('\n')[0] }}
+                                        </small>
+                                    {% endif %}
                                 </div>
                             </td>
                             <td class="col-budget">
@@ -191,12 +194,7 @@
                                 <div>
                                     {% if lead.hubspot_stage_label %}
                                         {# Показуємо ТІЛЬКИ детальний статус з HubSpot #}
-                                        {% if lead.status == 'new' %}
-                                        <span class="status-badge new" style="background: #fee2e2 !important; color: #991b1b !important; border: 1px solid #fca5a5 !important; text-transform: none !important; font-size: 0.75rem;">
-                                            <i class="fas fa-circle"></i>
-                                            <span style="text-transform: none !important;">{{ lead.hubspot_stage_label }}</span>
-                                        </span>
-                                        {% elif lead.status == 'contacted' %}
+                                        {% if lead.status == 'contacted' %}
                                         <span class="status-badge contacted" style="text-transform: none !important; font-size: 0.75rem;">
                                             <i class="fas fa-phone"></i>
                                             <span style="text-transform: none !important;">{{ lead.hubspot_stage_label }}</span>
@@ -564,32 +562,33 @@ function fetchAllDealsFromHubSpot() {
     });
 }
 
-// Автоматична синхронізація кожні 5 хвилин (300 секунд) - зменшено з 30 сек для зменшення навантаження на HubSpot API
-// HubSpot має ліміт 100 запитів на 10 секунд, тому часті синхронізації можуть призвести до rate limiting
-{% if current_user.role == 'admin' %}
-setInterval(function() {
-    console.log('Автоматична синхронізація існуючих лідів з HubSpot...');
-    fetch('/sync_all_leads', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCsrfToken()
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            console.log('✅ Синхронізація успішна:', data.message);
-            // Тихо перезавантажуємо дані без повідомлень
-            location.reload();
-        } else {
-            console.log('❌ Помилка синхронізації:', data.message);
-        }
-    })
-    .catch(error => {
-        console.error('❌ Помилка при синхронізації:', error);
-    });
-}, 300000); // 5 хвилин (300000 мс) - оптимізовано для HubSpot rate limits
-{% endif %}
+// ⚡ ОПТИМІЗАЦІЯ: ВИМКНЕНО автоматичну синхронізацію HubSpot з dashboard
+// Це робило POST запит до /sync_all_leads кожні 5 хвилин, що сповільнювало систему
+// Синхронізацію можна запускати вручну через кнопку "Синхронізувати deals"
+// Розкоментуйте наступний код, якщо потрібна автоматична синхронізація:
+// {% if current_user.role == 'admin' %}
+// setInterval(function() {
+//     console.log('Автоматична синхронізація існуючих лідів з HubSpot...');
+//     fetch('/sync_all_leads', {
+//         method: 'POST',
+//         headers: {
+//             'Content-Type': 'application/json',
+//             'X-CSRFToken': getCsrfToken()
+//         }
+//     })
+//     .then(response => response.json())
+//     .then(data => {
+//         if (data.success) {
+//             console.log('✅ Синхронізація успішна:', data.message);
+//             location.reload();
+//         } else {
+//             console.log('❌ Помилка синхронізації:', data.message);
+//         }
+//     })
+//     .catch(error => {
+//         console.error('❌ Помилка при синхронізації:', error);
+//     });
+// }, 300000); // 5 хвилин
+// {% endif %}
 </script>
 {% endblock %}

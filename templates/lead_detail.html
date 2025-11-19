@@ -68,28 +68,33 @@
                         <div class="form-group">
                             <label class="form-label">
                                 <i class="fas fa-user-tie"></i>
-                                <span>Власник угоди</span>
+                                <span>Відповідальний агент</span>
                             </label>
                             <div class="form-value">
-                {% if lead.notes and "HubSpot Responsible Agent:" in lead.notes %}
-                    {{ lead.notes.split("HubSpot Responsible Agent: ")[1] }}
-                {% else %}
-                    {{ agent.username }} ({{ agent.role }})
-                {% endif %}
+                                {% if lead.agent %}
+                                    {{ lead.agent.username }} ({{ lead.agent.role }})
+                                    {% if lead.notes and "HubSpot Responsible Agent:" in lead.notes %}
+                                        <br><small style="color: #64748b; font-size: 0.875rem;">
+                                            HubSpot: {{ lead.notes.split("HubSpot Responsible Agent: ")[1].split('\n')[0] }}
+                                        </small>
+                                    {% endif %}
+                                {% else %}
+                                    Не вказано
+                                {% endif %}
                             </div>
         </div>
         
                         <div class="form-group">
                             <label class="form-label">
                                 <i class="fas fa-user-cog"></i>
-                                <span>Агент (обробник)</span>
+                                <span>HubSpot власник угоди</span>
                             </label>
                             <div class="form-value">
-                {% if lead.notes and "HubSpot Deal Owner:" in lead.notes %}
-                    {{ lead.notes.split("HubSpot Deal Owner: ")[1] }}
-                {% else %}
-                    Не вказано
-                {% endif %}
+                                {% if lead.notes and "HubSpot Deal Owner:" in lead.notes %}
+                                    {{ lead.notes.split("HubSpot Deal Owner: ")[1].split('\n')[0] }}
+                                {% else %}
+                                    Не вказано
+                                {% endif %}
                             </div>
         </div>
                         
@@ -101,12 +106,7 @@
                             <div class="form-value">
                                 {% if lead.hubspot_stage_label %}
                                     {# Показуємо ТІЛЬКИ детальний статус з HubSpot #}
-                                    {% if lead.status == 'new' %}
-                                    <span class="status-badge new" style="background: #fee2e2 !important; color: #991b1b !important; border: 1px solid #fca5a5 !important; text-transform: none !important;">
-                                        <i class="fas fa-circle"></i>
-                                        <span style="text-transform: none !important;">{{ lead.hubspot_stage_label }}</span>
-                                    </span>
-                                    {% elif lead.status == 'contacted' %}
+                                    {% if lead.status == 'contacted' %}
                                     <span class="status-badge contacted" style="text-transform: none !important;">
                                         <i class="fas fa-phone"></i>
                                         <span style="text-transform: none !important;">{{ lead.hubspot_stage_label }}</span>

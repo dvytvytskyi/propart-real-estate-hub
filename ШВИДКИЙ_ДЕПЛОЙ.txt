@@ -1,0 +1,42 @@
+==========================================
+ШВИДКИЙ ДЕПЛОЙ ВИПРАВЛЕНЬ
+==========================================
+
+КОМАНДИ ДЛЯ ВИКОНАННЯ:
+
+1. ЛОКАЛЬНО (на вашому Mac):
+==========================================
+
+cd /Users/vytvytskyi/propart-real-estate-hub
+git add app.py templates/dashboard.html
+git commit -m "⚡ Критичні оптимізації: вимкнено автоматичну синхронізацію HubSpot та додано eager loading"
+git push origin main
+
+
+2. НА СЕРВЕРІ:
+==========================================
+
+ssh root@188.245.228.175
+# Пароль: 7NdMqCMV4wtw
+
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub
+git pull origin main
+sudo systemctl restart propart
+systemctl status propart | head -10
+
+
+3. ПЕРЕВІРКА:
+==========================================
+
+# Перевірити що автоматична синхронізація вимкнена
+grep "setInterval" templates/dashboard.html | grep -v "^[[:space:]]*//"
+
+# Має бути порожньо
+
+# Тест швидкості
+curl -s -o /dev/null -w "Час: %{time_total}s\n" http://localhost:8000/dashboard
+
+# Має бути < 1 секунди
+
+==========================================
+

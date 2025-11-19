@@ -1,0 +1,63 @@
+# Команди для виправлення синхронізації коментарів на сервері
+
+# 1. Підключіться до сервера
+ssh root@188.245.228.175
+# Пароль: 7NdMqCMV4wtw
+
+# 2. Перейдіть в директорію проекту
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub
+
+# 3. Оновіть код
+git pull origin main
+
+# 4. Перезапустіть додаток
+sudo systemctl restart propart
+
+# 5. Перевірте логи після додавання коментаря
+tail -f logs/propart.log | grep -i "comment\|hubspot\|note\|deal_id"
+
+# АБО перевірте останні логи:
+tail -100 logs/propart.log | grep -i "comment\|hubspot\|note"
+
+# 6. Запустіть скрипт перевірки синхронізації
+python3 check_comment_sync.py
+
+# 7. Перевірте конкретний лід (замініть ID на реальний)
+python3 << 'EOF'
+from app import app, db, Lead, Comment
+with app.app_context():
+    # Знайдіть лід за назвою "тест комент"
+    lead = Lead.query.filter_by(deal_name="тест комент").first()
+    if lead:
+        print(f"Лід знайдено: ID={lead.id}, deal_name={lead.deal_name}")
+        print(f"hubspot_deal_id: {lead.hubspot_deal_id}")
+        print(f"hubspot_contact_id: {lead.hubspot_contact_id}")
+        comments = Comment.query.filter_by(lead_id=lead.id).order_by(Comment.created_at.desc()).all()
+        print(f"\nКоментарів: {len(comments)}")
+        for c in comments:
+            print(f"  - ID: {c.id}")
+            print(f"    Створено: {c.created_at}")
+            print(f"    hubspot_note_id: {c.hubspot_note_id or 'НЕ ВСТАНОВЛЕНО'}")
+            print(f"    Текст: {c.content[:50]}...")
+            print()
+    else:
+        print("Лід 'тест комент' не знайдено")
+        # Покажіть останні 5 лідів
+        leads = Lead.query.order_by(Lead.created_at.desc()).limit(5).all()
+        print("\nОстанні 5 лідів:")
+        for l in leads:
+            print(f"  - ID: {l.id}, deal_name: {l.deal_name}, hubspot_deal_id: {l.hubspot_deal_id}")
+EOF
+
+# 8. Перевірте HUBSPOT_API_KEY
+python3 << 'EOF'
+import os
+from dotenv import load_dotenv
+load_dotenv()
+api_key = os.getenv('HUBSPOT_API_KEY')
+if api_key:
+    print(f"✅ HUBSPOT_API_KEY встановлено: {api_key[:10]}...{api_key[-5:]}")
+else:
+    print("❌ HUBSPOT_API_KEY не встановлено в .env файлі")
+EOF
+

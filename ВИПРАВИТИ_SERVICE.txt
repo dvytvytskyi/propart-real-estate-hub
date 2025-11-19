@@ -1,0 +1,62 @@
+================================================================
+🔧 ВИПРАВЛЕННЯ SYSTEMD SERVICE
+================================================================
+
+Проблема: ProtectHome=true блокує доступ до /home/pro-part-agent
+
+================================================================
+КОМАНДИ ДЛЯ ВИКОНАННЯ НА СЕРВЕРІ:
+================================================================
+
+# 1. Оновити код
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub
+git pull origin main
+
+# 2. Створити директорії для логів (якщо не існують)
+sudo mkdir -p /var/log/propart /var/run/propart
+sudo chown -R www-data:www-data /var/log/propart /var/run/propart
+
+# 3. Оновити systemd service файл
+sudo cp propart.service /etc/systemd/system/propart.service
+
+# 4. Перезавантажити systemd
+sudo systemctl daemon-reload
+
+# 5. Перезапустити сервіс
+sudo systemctl restart propart
+
+# 6. Перевірити статус
+sudo systemctl status propart
+
+# 7. Перевірити логи (якщо все ще не працює)
+sudo journalctl -u propart -n 50 --no-pager
+
+================================================================
+ДІАГНОСТИКА (якщо все ще не працює):
+================================================================
+
+# Запустіть скрипт діагностики
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub
+bash check_service_error.sh
+
+Це покаже:
+- Статус сервісу
+- Останні помилки
+- Чи існують необхідні файли
+- Чи правильно налаштовані шляхи
+
+================================================================
+ШВИДКИЙ ВАРІАНТ (всі команди разом):
+================================================================
+
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub && \
+git pull origin main && \
+sudo mkdir -p /var/log/propart /var/run/propart && \
+sudo chown -R www-data:www-data /var/log/propart /var/run/propart && \
+sudo cp propart.service /etc/systemd/system/propart.service && \
+sudo systemctl daemon-reload && \
+sudo systemctl restart propart && \
+sudo systemctl status propart
+
+================================================================
+
