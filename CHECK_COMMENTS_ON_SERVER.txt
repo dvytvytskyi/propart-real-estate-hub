@@ -1,0 +1,55 @@
+# Команди для перевірки синхронізації коментарів на сервері
+
+# 1. Підключіться до сервера
+ssh root@188.245.228.175
+# Пароль: 7NdMqCMV4wtw
+
+# 2. Перейдіть в директорію проекту
+cd /home/pro-part-agent/htdocs/agent.pro-part.online/propart-real-estate-hub
+
+# 3. Перевірте останні логи після додавання коментаря
+tail -100 logs/propart.log | grep -i "comment\|hubspot\|note" | tail -30
+
+# 4. Перевірте детальні логи створення коментаря
+tail -200 logs/propart.log | grep -A 10 "Створення коментаря\|Перевірка умов\|hubspot_deal_id"
+
+# 5. Запустіть скрипт перевірки синхронізації
+python3 check_comment_sync.py
+
+# 6. Перевірте, чи є hubspot_deal_id у конкретного ліда (замініть ID)
+python3 << 'EOF'
+from app import app, db, Lead, Comment
+with app.app_context():
+    # Замініть на ID ліда з коментарем
+    lead_id = 123  # ЗМІНІТЬ НА РЕАЛЬНИЙ ID
+    lead = Lead.query.get(lead_id)
+    if lead:
+        print(f"Лід: {lead.deal_name}")
+        print(f"hubspot_deal_id: {lead.hubspot_deal_id}")
+        print(f"hubspot_contact_id: {lead.hubspot_contact_id}")
+        comments = Comment.query.filter_by(lead_id=lead_id).all()
+        print(f"\nКоментарів: {len(comments)}")
+        for c in comments:
+            print(f"  - ID: {c.id}, hubspot_note_id: {c.hubspot_note_id}, текст: {c.content[:50]}")
+    else:
+        print(f"Лід {lead_id} не знайдено")
+EOF
+
+# 7. Перевірте статус сервісу
+sudo systemctl status propart
+
+# 8. Перевірте, чи працює HubSpot API
+python3 << 'EOF'
+from app import app, hubspot_client, HUBSPOT_API_KEY
+with app.app_context():
+    print(f"HUBSPOT_API_KEY встановлено: {bool(HUBSPOT_API_KEY)}")
+    print(f"hubspot_client ініціалізовано: {hubspot_client is not None}")
+    if hubspot_client:
+        try:
+            # Простий тест API
+            owners = hubspot_client.crm.owners.owners_api.get_page(limit=1)
+            print(f"✅ HubSpot API працює! Знайдено {len(owners.results)} owners")
+        except Exception as e:
+            print(f"❌ Помилка HubSpot API: {e}")
+EOF
+

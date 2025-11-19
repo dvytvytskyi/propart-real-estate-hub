@@ -3909,7 +3909,10 @@ def create_lead_comment(lead_id):
             app.logger.warning(f"⚠️ HUBSPOT_API_KEY не встановлено, синхронізація з HubSpot пропущена")
             print(f"⚠️ HUBSPOT_API_KEY не встановлено, синхронізація з HubSpot пропущена")
         
-        if lead.hubspot_deal_id and hubspot_client and HUBSPOT_API_KEY:
+        # Перевіряємо HUBSPOT_API_KEY з os.getenv як fallback
+        hubspot_api_key = HUBSPOT_API_KEY or os.getenv('HUBSPOT_API_KEY')
+        
+        if lead.hubspot_deal_id and hubspot_client and hubspot_api_key:
             try:
                 from hubspot.crm.objects.notes import SimplePublicObjectInput
                 from datetime import datetime, timezone
@@ -3925,7 +3928,11 @@ def create_lead_comment(lead_id):
                 # Використовуємо правильну назву поля: hsnotebody (без підкреслення)
                 # Спробуємо створити нотатку через прямий HTTP запит для кращого контролю
                 import requests
-                api_key = HUBSPOT_API_KEY
+                api_key = HUBSPOT_API_KEY or os.getenv('HUBSPOT_API_KEY')
+                if not api_key:
+                    app.logger.error(f"❌ HUBSPOT_API_KEY не знайдено!")
+                    print(f"❌ HUBSPOT_API_KEY не знайдено!")
+                    raise ValueError("HUBSPOT_API_KEY не встановлено")
                 
                 # Створюємо нотатку через v3 API
                 url = "https://api.hubapi.com/crm/v3/objects/notes"
