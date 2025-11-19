@@ -5,7 +5,7 @@ from flask_login import LoginManager, UserMixin, login_user, login_required, log
 from flask_bcrypt import Bcrypt
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFProtect, CSRFError
 from wtforms import StringField, PasswordField, TextAreaField, SelectField, HiddenField, DecimalField, validators
 from flask_wtf import FlaskForm as Form
 from dotenv import load_dotenv
@@ -100,9 +100,10 @@ csrf = CSRFProtect(app)
 app.logger.info("✅ CSRF захист активовано")
 
 # Обробка помилок CSRF
-@csrf.error_handler
-def csrf_error(reason):
+@app.errorhandler(CSRFError)
+def csrf_error(e):
     """Обробка помилок CSRF"""
+    reason = str(e.description) if hasattr(e, 'description') else str(e)
     app.logger.warning(f"⚠️ CSRF помилка: {reason}")
     app.logger.warning(f"   Request path: {request.path}")
     app.logger.warning(f"   Request method: {request.method}")
@@ -3897,21 +3898,23 @@ def create_lead_comment(lead_id):
         app.logger.info(f"📝 Перевірка умов для синхронізації з HubSpot:")
         app.logger.info(f"   lead.hubspot_deal_id: {lead.hubspot_deal_id}")
         app.logger.info(f"   hubspot_client: {hubspot_client is not None}")
-        app.logger.info(f"   HUBSPOT_API_KEY: {bool(HUBSPOT_API_KEY)}")
         
+        # Перевіряємо HUBSPOT_API_KEY з os.getenv як fallback
+        hubspot_api_key = HUBSPOT_API_KEY or os.getenv('HUBSPOT_API_KEY')
+        app.logger.info(f"   HUBSPOT_API_KEY: {bool(hubspot_api_key)}")
+        
+        # Перевірка всіх умов одночасно для кращого логування
         if not lead.hubspot_deal_id:
             app.logger.warning(f"⚠️ Лід {lead_id} не має hubspot_deal_id, синхронізація з HubSpot пропущена")
             print(f"⚠️ Лід {lead_id} не має hubspot_deal_id, синхронізація з HubSpot пропущена")
         elif not hubspot_client:
             app.logger.warning(f"⚠️ hubspot_client не ініціалізовано, синхронізація з HubSpot пропущена")
             print(f"⚠️ hubspot_client не ініціалізовано, синхронізація з HubSpot пропущена")
-        elif not HUBSPOT_API_KEY:
+        elif not hubspot_api_key:
             app.logger.warning(f"⚠️ HUBSPOT_API_KEY не встановлено, синхронізація з HubSpot пропущена")
             print(f"⚠️ HUBSPOT_API_KEY не встановлено, синхронізація з HubSpot пропущена")
         
-        # Перевіряємо HUBSPOT_API_KEY з os.getenv як fallback
-        hubspot_api_key = HUBSPOT_API_KEY or os.getenv('HUBSPOT_API_KEY')
-        
+        # Спробуємо синхронізувати, якщо всі умови виконані
         if lead.hubspot_deal_id and hubspot_client and hubspot_api_key:
             try:
                 from hubspot.crm.objects.notes import SimplePublicObjectInput
@@ -3928,8 +3931,9 @@ def create_lead_comment(lead_id):
                 # Використовуємо правильну назву поля: hsnotebody (без підкреслення)
                 # Спробуємо створити нотатку через прямий HTTP запит для кращого контролю
                 import requests
-                api_key = HUBSPOT_API_KEY or os.getenv('HUBSPOT_API_KEY')
-                if not api_key:
+                
+                # Використовуємо hubspot_api_key, який вже перевірено вище
+                if not hubspot_api_key:
                     app.logger.error(f"❌ HUBSPOT_API_KEY не знайдено!")
                     print(f"❌ HUBSPOT_API_KEY не знайдено!")
                     raise ValueError("HUBSPOT_API_KEY не встановлено")
@@ -3937,7 +3941,7 @@ def create_lead_comment(lead_id):
                 # Створюємо нотатку через v3 API
                 url = "https://api.hubapi.com/crm/v3/objects/notes"
                 headers = {
-                    "Authorization": f"Bearer {api_key}",
+                    "Authorization": f"Bearer {hubspot_api_key}",
                     "Content-Type": "application/json"
                 }
                 
@@ -3967,14 +3971,17 @@ def create_lead_comment(lead_id):
                             app.logger.info(f"✅ Нотатка створена в HubSpot: {hubspot_note_id}")
                             print(f"✅ Нотатка створена в HubSpot: {hubspot_note_id}")
                             
-                            # Тепер створюємо асоціацію через окремий запит (v4 API)
+                            # Тепер створюємо асоціацію через окремий запит (v3 API)
                             try:
-                                assoc_url = f"https://api.hubapi.com/crm/v4/objects/notes/{hubspot_note_id}/associations/deal/{lead.hubspot_deal_id}"
-                                assoc_data = [{
-                                    "associationCategory": "HUBSPOT_DEFINED",
-                                    "associationTypeId": 214  # Для notes-deals
-                                }]
-                                assoc_response = requests.put(assoc_url, headers=headers, json=assoc_data)
+                                # Правильний формат для HubSpot v3 API associations
+                                # PUT /crm/v3/objects/notes/{noteId}/associations/deal/{dealId}/note_to_deal
+                                assoc_url = f"https://api.hubapi.com/crm/v3/objects/notes/{hubspot_note_id}/associations/deal/{lead.hubspot_deal_id}/note_to_deal"
+                                
+                                app.logger.info(f"📝 Створення асоціації note {hubspot_note_id} з deal {lead.hubspot_deal_id}")
+                                app.logger.info(f"   URL: {assoc_url}")
+                                
+                                # PUT запит без body (v3 API)
+                                assoc_response = requests.put(assoc_url, headers=headers, timeout=10)
                                 
                                 app.logger.info(f"📥 Відповідь HubSpot API (асоціація): {assoc_response.status_code}")
                                 app.logger.info(f"   Response body: {assoc_response.text[:500] if assoc_response.text else 'Empty'}")
@@ -4019,19 +4026,22 @@ def create_lead_comment(lead_id):
                         if hubspot_note.id:
                             comment.hubspot_note_id = str(hubspot_note.id)
                             
-                            # Асоціюємо через окремий запит (v4 API)
+                            # Асоціюємо через окремий запит (v3 API)
                             try:
-                                assoc_url = f"https://api.hubapi.com/crm/v4/objects/notes/{hubspot_note.id}/associations/deal/{lead.hubspot_deal_id}"
+                                # Правильний формат для HubSpot v3 API associations
+                                assoc_url = f"https://api.hubapi.com/crm/v3/objects/notes/{hubspot_note.id}/associations/deal/{lead.hubspot_deal_id}/note_to_deal"
                                 assoc_headers = {
-                                    "Authorization": f"Bearer {api_key}",
+                                    "Authorization": f"Bearer {hubspot_api_key}",
                                     "Content-Type": "application/json"
                                 }
-                                assoc_data = [{
-                                    "associationCategory": "HUBSPOT_DEFINED",
-                                    "associationTypeId": 214
-                                }]
                                 
-                                assoc_response = requests.put(assoc_url, headers=assoc_headers, json=assoc_data)
+                                app.logger.info(f"📝 Створення асоціації note {hubspot_note.id} з deal {lead.hubspot_deal_id} (fallback)")
+                                
+                                assoc_response = requests.put(assoc_url, headers=assoc_headers, timeout=10)
+                                
+                                app.logger.info(f"📥 Відповідь HubSpot API (асоціація fallback): {assoc_response.status_code}")
+                                app.logger.info(f"   Response body: {assoc_response.text[:500] if assoc_response.text else 'Empty'}")
+                                
                                 if assoc_response.status_code in [200, 201, 204]:
                                     app.logger.info(f"✅ Нотатка створена та асоційована з deal (fallback) в HubSpot: {hubspot_note.id}")
                                     print(f"✅ Нотатка створена та асоційована з deal (fallback) в HubSpot: {hubspot_note.id}")
@@ -4040,6 +4050,7 @@ def create_lead_comment(lead_id):
                                     print(f"⚠️ Нотатка створена, але асоціація не вдалася: {assoc_response.status_code}")
                             except Exception as assoc_error:
                                 app.logger.error(f"❌ Помилка асоціації: {assoc_error}")
+                                app.logger.error(f"   Traceback: {traceback.format_exc()}")
                                 print(f"⚠️ Помилка асоціації: {assoc_error}")
                     except Exception as sdk_error:
                         app.logger.error(f"❌ Помилка створення нотатки через SDK: {sdk_error}")
