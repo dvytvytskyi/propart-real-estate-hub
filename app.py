@@ -1778,11 +1778,40 @@ def sync_lead_from_hubspot(lead):
                     lead.deal_name = deal.properties['dealname']
                     print(f"Оновлено deal_name з HubSpot: {lead.deal_name}")
                 
-                # Оновлюємо responisble_agent з HubSpot (ПРІОРИТЕТ 0 - найвищий)
-                # Це основний відповідальний агент з CRM, тому має найвищий пріоритет
+                # Синхронізація агента з пріоритетами:
+                # ПРІОРИТЕТ 0: hubspot_owner_id (найвищий - використовуємо email для точного пошуку)
+                # ПРІОРИТЕТ 1: responisble_agent
+                # ПРІОРИТЕТ 2: from_agent_portal__name_
                 agent_synced = False  # Флаг, щоб інші пріоритети не перезаписували
                 
-                if deal.properties.get('responisble_agent'):
+                # ПРІОРИТЕТ 0: hubspot_owner_id (найвищий пріоритет)
+                if deal.properties.get('hubspot_owner_id'):
+                    try:
+                        # Отримуємо інформацію про власника
+                        owner = hubspot_client.crm.owners.owners_api.get_by_id(
+                            owner_id=deal.properties['hubspot_owner_id']
+                        )
+                        if owner and owner.email:
+                            # Шукаємо агента в системі по email (найточніший спосіб)
+                            agent_by_email = User.query.filter_by(email=owner.email.lower()).first()
+                            if agent_by_email and agent_by_email.id != lead.agent_id:
+                                print(f"✅ Синхронізація агента з hubspot_owner_id ({owner.email}) → {agent_by_email.username} (ID: {agent_by_email.id}) для ліда {lead.id}")
+                                old_agent_id = lead.agent_id
+                                lead.agent_id = agent_by_email.id
+                                agent_synced = True
+                                app.logger.info(f"✅ Синхронізовано agent_id для ліда {lead.id}: {old_agent_id} → {agent_by_email.id} (з HubSpot owner email: {owner.email})")
+                            elif agent_by_email:
+                                print(f"✅ Агент з hubspot_owner_id ({owner.email}) вже встановлений для ліда {lead.id}")
+                                agent_synced = True
+                            else:
+                                print(f"⚠️ Агент з email {owner.email} (hubspot_owner_id) не знайдено в системі для ліда {lead.id}")
+                                app.logger.warning(f"⚠️ Агент з email {owner.email} (HubSpot owner) не знайдено в системі для ліда {lead.id}")
+                    except Exception as e:
+                        print(f"❌ Помилка отримання власника угоди: {e}")
+                        app.logger.error(f"❌ Помилка отримання HubSpot owner для ліда {lead.id}: {e}")
+                
+                # ПРІОРИТЕТ 1: responisble_agent (тільки якщо hubspot_owner_id не встановлено)
+                if not agent_synced and deal.properties.get('responisble_agent'):
                     responsible_agent_value = deal.properties['responisble_agent'].strip()
                     
                     # Завжди оновлюємо HubSpot Responsible Agent в notes
@@ -1832,7 +1861,7 @@ def sync_lead_from_hubspot(lead):
                         print(f"⚠️ Агент '{responsible_agent_value}' (responisble_agent) не знайдено в системі для ліда {lead.id}")
                         app.logger.warning(f"⚠️ Агент '{responsible_agent_value}' (responisble_agent) не знайдено в системі для ліда {lead.id}")
                 
-                # Синхронізуємо агента з поля from_agent_portal__name_ (пріоритет 1, тільки якщо responisble_agent не встановлено)
+                # ПРІОРИТЕТ 2: from_agent_portal__name_ (тільки якщо hubspot_owner_id і responisble_agent не встановлено)
                 if not agent_synced and deal.properties.get('from_agent_portal__name_'):
                     agent_name = deal.properties['from_agent_portal__name_'].strip()
                     if agent_name:
@@ -1849,16 +1878,20 @@ def sync_lead_from_hubspot(lead):
                         else:
                             print(f"⚠️ Агент з username {agent_name} (from_agent_portal__name_) не знайдено в системі для ліда {lead.id}")
                 
-                # Оновлюємо deal owner (власника угоди) - завжди синхронізуємо з HubSpot (для notes)
-                # Синхронізуємо agent_id на основі hubspot_owner_id тільки якщо responisble_agent і from_agent_portal__name_ не встановлено (пріоритет 2)
+                # Оновлюємо HubSpot Deal Owner в notes (для відображення, навіть якщо agent_id вже встановлено)
                 if deal.properties.get('hubspot_owner_id'):
                     try:
-                        # Отримуємо інформацію про власника
-                        owner = hubspot_client.crm.owners.owners_api.get_by_id(
-                            owner_id=deal.properties['hubspot_owner_id']
-                        )
+                        # Отримуємо інформацію про власника (якщо ще не отримували вище)
+                        if not agent_synced or 'owner' not in locals():
+                            owner = hubspot_client.crm.owners.owners_api.get_by_id(
+                                owner_id=deal.properties['hubspot_owner_id']
+                            )
+                        else:
+                            # Використовуємо вже отриманого owner
+                            pass
+                        
                         if owner:
-                            # Формуємо ім'я власника
+                            # Формуємо ім'я власника для notes
                             owner_name = ""
                             if owner.first_name and owner.last_name:
                                 owner_name = f"{owner.first_name} {owner.last_name}"
@@ -1867,43 +1900,27 @@ def sync_lead_from_hubspot(lead):
                             elif owner.last_name:
                                 owner_name = owner.last_name
                             elif owner.email:
-                                # Якщо імен немає, використовуємо email
                                 owner_name = owner.email
                             
                             if owner_name:
-                                # Завжди оновлюємо HubSpot Deal Owner в notes (навіть якщо вже є)
+                                # Завжди оновлюємо HubSpot Deal Owner в notes (для відображення)
                                 import re
                                 owner_pattern = r'HubSpot Deal Owner:\s*[^\n]*'
                                 new_owner_text = f'HubSpot Deal Owner: {owner_name}'
                                 
                                 if lead.notes and re.search(owner_pattern, lead.notes):
-                                    # Замінюємо старе значення на нове
                                     lead.notes = re.sub(owner_pattern, new_owner_text, lead.notes)
                                 else:
-                                    # Додаємо нове значення
                                     if lead.notes:
                                         lead.notes = (lead.notes.rstrip() + "\n" + new_owner_text).strip()
                                     else:
                                         lead.notes = new_owner_text
                                 
-                                print(f"✅ Оновлено HubSpot власника угоди: {owner_name}")
+                                print(f"✅ Оновлено HubSpot власника угоди в notes: {owner_name}")
                                 app.logger.info(f"✅ Оновлено HubSpot власника угоди для ліда {lead.id}: {owner_name}")
-                                
-                                # Синхронізуємо agent_id на основі HubSpot owner email (тільки якщо responisble_agent і from_agent_portal__name_ не встановлено)
-                                if not agent_synced and owner.email:
-                                    # Шукаємо агента в системі по email
-                                    agent_by_email = User.query.filter_by(email=owner.email.lower()).first()
-                                    if agent_by_email and agent_by_email.id != lead.agent_id:
-                                        print(f"🔄 Зміна агента: {lead.agent_id} → {agent_by_email.id} ({owner.email})")
-                                        old_agent_id = lead.agent_id
-                                        lead.agent_id = agent_by_email.id
-                                        app.logger.info(f"🔄 Синхронізовано agent_id для ліда {lead.id}: {old_agent_id} → {agent_by_email.id} (з HubSpot owner email)")
-                                    elif not agent_by_email:
-                                        print(f"⚠️ Агент з email {owner.email} не знайдено в системі")
-                                        app.logger.warning(f"⚠️ Агент з email {owner.email} (HubSpot owner) не знайдено в системі для ліда {lead.id}")
                     except Exception as e:
-                        print(f"❌ Помилка отримання власника угоди: {e}")
-                        app.logger.error(f"❌ Помилка отримання HubSpot owner для ліда {lead.id}: {e}")
+                        print(f"❌ Помилка отримання власника угоди для notes: {e}")
+                        app.logger.error(f"❌ Помилка отримання HubSpot owner для notes ліда {lead.id}: {e}")
         
         # Синхронізуємо активності з HubSpot
         sync_activities_from_hubspot(lead)
@@ -2200,13 +2217,27 @@ def fetch_all_deals_from_hubspot():
                                 ).first()
                                 
                                 # Визначаємо агента з пріоритетами:
-                                # ПРІОРИТЕТ 0: responisble_agent (найвищий - це основний відповідальний агент з CRM)
-                                # ПРІОРИТЕТ 1: from_agent_portal__name_
-                                # ПРІОРИТЕТ 2: hubspot_owner_id
+                                # ПРІОРИТЕТ 0: hubspot_owner_id (найвищий - використовуємо email для точного пошуку)
+                                # ПРІОРИТЕТ 1: responisble_agent
+                                # ПРІОРИТЕТ 2: from_agent_portal__name_
                                 agent_id = None
                                 
-                                # ПРІОРИТЕТ 0: responisble_agent
-                                if deal_properties.get('responisble_agent'):
+                                # ПРІОРИТЕТ 0: hubspot_owner_id (найвищий пріоритет)
+                                if deal_properties.get('hubspot_owner_id'):
+                                    try:
+                                        owner = hubspot_client.crm.owners.owners_api.get_by_id(
+                                            owner_id=deal_properties['hubspot_owner_id']
+                                        )
+                                        if owner and owner.email:
+                                            agent_user = User.query.filter_by(email=owner.email.lower()).first()
+                                            if agent_user:
+                                                agent_id = agent_user.id
+                                                print(f"✅ Знайдено агента за hubspot_owner_id ({owner.email}) → {agent_user.username} (ID: {agent_id}) для deal {deal_id}")
+                                    except Exception as owner_error:
+                                        app.logger.debug(f"⚠️ Помилка отримання owner: {owner_error}")
+                                
+                                # ПРІОРИТЕТ 1: responisble_agent
+                                if not agent_id and deal_properties.get('responisble_agent'):
                                     responsible_agent_value = deal_properties['responisble_agent'].strip()
                                     if responsible_agent_value:
                                         # Спочатку шукаємо по username
@@ -2226,7 +2257,7 @@ def fetch_all_deals_from_hubspot():
                                             agent_id = agent_user.id
                                             print(f"✅ Знайдено агента за responisble_agent ({responsible_agent_value}) → {agent_user.username} (ID: {agent_id}) для deal {deal_id}")
                                         
-                                # ПРІОРИТЕТ 1: from_agent_portal__name_
+                                # ПРІОРИТЕТ 2: from_agent_portal__name_
                                 if not agent_id and deal_properties.get('from_agent_portal__name_'):
                                     agent_name = deal_properties['from_agent_portal__name_'].strip()
                                     if agent_name:
@@ -2234,9 +2265,6 @@ def fetch_all_deals_from_hubspot():
                                         if agent_user:
                                             agent_id = agent_user.id
                                             print(f"✅ Знайдено агента за from_agent_portal__name_ ({agent_name}) для deal {deal_id}")
-                                
-                                # ПРІОРИТЕТ 2: hubspot_owner_id
-                                if not agent_id and deal_properties.get('hubspot_owner_id'):
                                     try:
                                         owner = hubspot_client.crm.owners.owners_api.get_by_id(
                                             owner_id=deal_properties['hubspot_owner_id']
