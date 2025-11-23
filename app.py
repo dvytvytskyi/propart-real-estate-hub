@@ -2747,7 +2747,7 @@ def login():
             user = User.query.filter_by(username=username).first()
             
             if user:
-                app.logger.info(f"🔍 Login: Користувач '{username}' знайдено (ID: {user.id}, role: {user.role}, active: {user.is_active})")
+                app.logger.info(f"🔍 Login: Користувач '{username}' знайдено (ID: {user.id}, role: {user.role}, active: {user.is_active}, verified: {user.is_verified if hasattr(user, 'is_verified') else 'N/A'})")
                 
                 # Перевіряємо, чи активний акаунт
                 if not user.is_active:
@@ -2762,18 +2762,28 @@ def login():
                     return render_template('login.html')
                 
                 # Перевіряємо пароль
-                if user.check_password(password):
+                password_check_result = user.check_password(password)
+                app.logger.info(f"🔍 Login: Перевірка паролю для '{username}': {'✅ ПРАВИЛЬНИЙ' if password_check_result else '❌ НЕПРАВИЛЬНИЙ'}")
+                
+                if password_check_result:
                     # Успішний вхід
                     app.logger.info(f"✅ Login: Успішний вхід для користувача '{username}' (ID: {user.id}, role: {user.role})")
                     try:
                         user.last_login = get_ukraine_time()
                         user.reset_login_attempts()
                         db.session.commit()
+                        
+                        # Логуємо перед login_user для діагностики
+                        app.logger.info(f"🔍 Login: Викликаю login_user для '{username}' (role: {user.role})")
                         login_user(user)
+                        app.logger.info(f"✅ Login: login_user виконано успішно для '{username}'")
+                        
                         app.logger.info(f"✅ Login: Користувач '{username}' успішно авторизований, перенаправляю на dashboard")
                         return redirect(url_for('dashboard'), code=302)
                     except Exception as e:
                         app.logger.error(f"❌ Login: Помилка при збереженні даних для користувача '{username}': {e}")
+                        import traceback
+                        app.logger.error(f"❌ Login: Traceback: {traceback.format_exc()}")
                         flash('Виникла помилка при вході. Спробуйте ще раз.')
                 else:
                     # Невдалий вхід
