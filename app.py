@@ -5544,9 +5544,16 @@ def get_all_hubspot_pipelines():
 @login_required
 def properties():
     """Список всіх нерухомості"""
-    from sqlalchemy.orm import joinedload
-    properties = Property.query.options(joinedload(Property.photos)).order_by(Property.created_at.desc()).all()
-    return render_template('properties.html', properties=properties)
+    try:
+        from sqlalchemy.orm import joinedload
+        properties_list = Property.query.options(joinedload(Property.photos)).order_by(Property.created_at.desc()).all()
+        app.logger.info(f"✅ Properties page: Завантажено {len(properties_list)} об'єктів нерухомості для користувача {current_user.username}")
+        return render_template('properties.html', properties=properties_list)
+    except Exception as e:
+        app.logger.error(f"❌ Помилка на сторінці properties для користувача {current_user.username if current_user.is_authenticated else 'неавторизований'}: {e}")
+        app.logger.error(traceback.format_exc())
+        flash('Виникла помилка при завантаженні сторінки нерухомості. Спробуйте оновити сторінку.', 'error')
+        return render_template('properties.html', properties=[])
 
 
 @app.route('/properties/<int:property_id>')
