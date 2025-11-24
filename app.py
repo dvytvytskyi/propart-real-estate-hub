@@ -3759,6 +3759,7 @@ def add_lead():
                                 "dealstage": "appointmentscheduled",  # Стадія ID для "Новая заявка"
                                 "phone_number": formatted_phone,  # Додаємо номер телефону в угоду
                                 "from_agent_portal__name_": agent_username,  # Ім'я агента (обробника), який відповідає за лід
+                                "responisble_agent": agent_username,  # Відповідальний агент в CRM (ВАЖЛИВО для синхронізації!)
                             }
                             
                             # Додаємо email як окреме поле в угоді (internal name: "email")
