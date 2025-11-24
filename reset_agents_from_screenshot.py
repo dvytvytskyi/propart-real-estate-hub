@@ -106,7 +106,21 @@ def reset_agents():
                 Lead.query.filter_by(agent_id=item['user'].id).update({'agent_id': olena.id})
                 print(f"✅ {item['leads_count']} лідів перепризначено з {item['user'].username} на olena_birovchak")
         
-        # 5. Видаляємо користувачів
+        # 5. Спочатку видаляємо документи користувачів (щоб уникнути ForeignKey constraint)
+        from app import UserDocument
+        
+        deleted_docs_count = 0
+        for user in users_to_delete:
+            docs = UserDocument.query.filter_by(user_id=user.id).all()
+            for doc in docs:
+                db.session.delete(doc)
+                deleted_docs_count += 1
+        
+        if deleted_docs_count > 0:
+            print(f"🗑️ Видаляємо {deleted_docs_count} документів користувачів...")
+            db.session.commit()
+        
+        # 6. Тепер видаляємо користувачів
         deleted_count = 0
         for user in users_to_delete:
             print(f"🗑️ Видаляємо: {user.username} ({user.email})")
@@ -119,7 +133,7 @@ def reset_agents():
             print(f"✅ Видалено: {deleted_count} користувачів")
             print()
         
-        # 6. Додаємо нових агентів
+        # 7. Додаємо нових агентів
         print("=" * 80)
         print("➕ ДОДАВАННЯ НОВИХ АГЕНТІВ")
         print("=" * 80)
