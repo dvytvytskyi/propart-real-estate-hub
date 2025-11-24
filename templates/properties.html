@@ -32,7 +32,7 @@
                 {% for property in properties %}
                 <div class="col-md-6 col-lg-4 mb-4">
                     <div class="card h-100">
-                        {% if property.photos %}
+                        {% if property.photos and property.photos|length > 0 %}
                         <img src="{{ property.photos[0].file_path }}" 
                              class="card-img-top" alt="{{ property.name }}" style="height: 200px; object-fit: cover;">
                         {% else %}
@@ -54,10 +54,10 @@
                             <div class="mt-auto">
                                 <div class="mb-2">
                                     <strong>Ціна:</strong>
-                                    {% if property.price_to %}
-                                        від ${{ "{:,.0f}".format(property.price_from) }} до ${{ "{:,.0f}".format(property.price_to) }}
+                                    {% if property.price_to and property.price_to != property.price_from %}
+                                        від ${{ "{:,.0f}".format(float(property.price_from) if property.price_from else 0) }} до ${{ "{:,.0f}".format(float(property.price_to) if property.price_to else 0) }}
                                     {% else %}
-                                        від ${{ "{:,.0f}".format(property.price_from) }}
+                                        від ${{ "{:,.0f}".format(float(property.price_from) if property.price_from else 0) }}
                                     {% endif %}
                                 </div>
                                 
