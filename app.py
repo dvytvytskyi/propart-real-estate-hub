@@ -1693,8 +1693,23 @@ def sync_lead_from_hubspot(lead):
                         '3204738267': 'Сделка закрыта'
                     }
                     
+                    # Маппінг назв стадій (якщо HubSpot повертає назви замість ID)
+                    stage_name_to_id = {
+                        'appointmentscheduled': '3204738258',  # Новая заявка
+                        'qualifiedtobuy': '3204738261',  # Кваліфіковано
+                        'presentationscheduled': '3204738262',  # Встреча проведена
+                        'decisionmakerboughtin': '3204738265',  # Переговоры
+                        'contractsent': '3204738266',  # Задаток
+                        'closedwon': '3204738267',  # Сделка закрыта
+                    }
+                    
                     hubspot_stage = deal.properties['dealstage']
                     print(f"🔄 HubSpot dealstage: {hubspot_stage}")
+                    
+                    # Якщо це назва стадії, конвертуємо в ID
+                    if hubspot_stage in stage_name_to_id:
+                        hubspot_stage = stage_name_to_id[hubspot_stage]
+                        print(f"   Конвертовано назву стадії в ID: {hubspot_stage}")
                     
                     # Зберігаємо оригінальну назву стадії з HubSpot
                     if hubspot_stage in stage_labels:

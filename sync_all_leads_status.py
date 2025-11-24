@@ -70,6 +70,16 @@ def sync_all_leads_status():
             '3204738267': 'Сделка закрыта'
         }
         
+        # Маппінг назв стадій (якщо HubSpot повертає назви замість ID)
+        stage_name_to_id = {
+            'appointmentscheduled': '3204738258',  # Новая заявка
+            'qualifiedtobuy': '3204738261',  # Кваліфіковано
+            'presentationscheduled': '3204738262',  # Встреча проведена
+            'decisionmakerboughtin': '3204738265',  # Переговоры
+            'contractsent': '3204738266',  # Задаток
+            'closedwon': '3204738267',  # Сделка закрыта
+        }
+        
         updated_count = 0
         error_count = 0
         not_found_count = 0
@@ -93,6 +103,10 @@ def sync_all_leads_status():
                     no_stage_count += 1
                     print(f"⚠️ Лід {lead.id}: Deal не має dealstage")
                     continue
+                
+                # Якщо це назва стадії, конвертуємо в ID
+                if dealstage_id in stage_name_to_id:
+                    dealstage_id = stage_name_to_id[dealstage_id]
                 
                 old_status = lead.status
                 old_label = lead.hubspot_stage_label
