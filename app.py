@@ -1438,7 +1438,7 @@ def sync_activities_from_hubspot(lead):
         return False
 
 def update_hubspot_owner(lead, new_agent_id):
-    """Оновлює hubspot_owner_id в HubSpot угоді при зміні агента"""
+    """Оновлює hubspot_owner_id та responisble_agent в HubSpot угоді при зміні агента"""
     if not hubspot_client or not lead.hubspot_deal_id:
         return False
     
@@ -1449,7 +1449,14 @@ def update_hubspot_owner(lead, new_agent_id):
             print(f"⚠️ Агент з ID {new_agent_id} не знайдено")
             return False
         
-        # Шукаємо HubSpot owner ID для нового агента
+        # Оновлюємо обидва поля в HubSpot
+        from hubspot.crm.deals import SimplePublicObjectInput
+        deal_properties = {
+            "responisble_agent": new_agent.username,  # ВАЖЛИВО: оновлюємо responisble_agent
+            "from_agent_portal__name_": new_agent.username  # Також оновлюємо from_agent_portal__name_
+        }
+        
+        # Шукаємо HubSpot owner ID для нового агента (якщо email співпадає)
         hubspot_owner_id = None
         try:
             print(f"🔍 Пошук HubSpot owner для нового агента: {new_agent.email}")
@@ -1458,18 +1465,16 @@ def update_hubspot_owner(lead, new_agent_id):
                 if owner.email and owner.email.lower() == new_agent.email.lower():
                     hubspot_owner_id = str(owner.id)
                     print(f"✅ Знайдено HubSpot owner ID: {hubspot_owner_id} для {new_agent.email}")
+                    deal_properties["hubspot_owner_id"] = hubspot_owner_id
                     break
             if not hubspot_owner_id:
-                print(f"⚠️ HubSpot owner не знайдено для {new_agent.email}")
-                return False
+                print(f"⚠️ HubSpot owner не знайдено для {new_agent.email}, оновлюємо тільки responisble_agent")
         except Exception as owner_error:
             print(f"⚠️ Помилка пошуку HubSpot owner: {owner_error}")
             app.logger.warning(f"⚠️ Помилка пошуку HubSpot owner для {new_agent.email}: {owner_error}")
-            return False
+            # Продовжуємо, навіть якщо owner не знайдено - все одно оновлюємо responisble_agent
         
-        # Оновлюємо hubspot_owner_id в угоді
-        from hubspot.crm.deals import SimplePublicObjectInput
-        deal_properties = {"hubspot_owner_id": hubspot_owner_id}
+        # Оновлюємо поля в угоді
         deal_input = SimplePublicObjectInput(properties=deal_properties)
         
         hubspot_client.crm.deals.basic_api.update(
@@ -1477,8 +1482,8 @@ def update_hubspot_owner(lead, new_agent_id):
             simple_public_object_input=deal_input
         )
         
-        print(f"✅ Оновлено HubSpot owner для ліда {lead.id}: {hubspot_owner_id}")
-        app.logger.info(f"✅ Оновлено HubSpot owner для ліда {lead.id}: {hubspot_owner_id}")
+        print(f"✅ Оновлено HubSpot поля для ліда {lead.id}: responisble_agent={new_agent.username}, hubspot_owner_id={hubspot_owner_id or 'не встановлено'}")
+        app.logger.info(f"✅ Оновлено HubSpot поля для ліда {lead.id}: responisble_agent={new_agent.username}, hubspot_owner_id={hubspot_owner_id or 'не встановлено'}")
         return True
         
     except Exception as e:
@@ -1883,9 +1888,9 @@ def sync_lead_from_hubspot(lead):
                     try:
                         # Отримуємо інформацію про власника (якщо ще не отримували вище)
                         if not agent_synced or 'owner' not in locals():
-                            owner = hubspot_client.crm.owners.owners_api.get_by_id(
-                                owner_id=deal.properties['hubspot_owner_id']
-                            )
+                        owner = hubspot_client.crm.owners.owners_api.get_by_id(
+                            owner_id=deal.properties['hubspot_owner_id']
+                        )
                         else:
                             # Використовуємо вже отриманого owner
                             pass
