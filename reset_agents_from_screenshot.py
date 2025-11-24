@@ -42,6 +42,11 @@ class Lead(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     agent_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
+class UserDocument(db.Model):
+    __tablename__ = 'user_document'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
 def generate_password(length=12):
     """Генерує безпечний випадковий пароль"""
     alphabet = string.ascii_letters + string.digits
@@ -107,8 +112,6 @@ def reset_agents():
                 print(f"✅ {item['leads_count']} лідів перепризначено з {item['user'].username} на olena_birovchak")
         
         # 5. Спочатку видаляємо документи користувачів (щоб уникнути ForeignKey constraint)
-        from app import UserDocument
-        
         deleted_docs_count = 0
         for user in users_to_delete:
             docs = UserDocument.query.filter_by(user_id=user.id).all()
