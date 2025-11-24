@@ -1888,12 +1888,10 @@ def sync_lead_from_hubspot(lead):
                     try:
                         # Отримуємо інформацію про власника (якщо ще не отримували вище)
                         if not agent_synced or 'owner' not in locals():
-                        owner = hubspot_client.crm.owners.owners_api.get_by_id(
-                            owner_id=deal.properties['hubspot_owner_id']
-                        )
-                        else:
-                            # Використовуємо вже отриманого owner
-                            pass
+                            owner = hubspot_client.crm.owners.owners_api.get_by_id(
+                                owner_id=deal.properties['hubspot_owner_id']
+                            )
+                        # Якщо owner вже отримано вище, використовуємо його
                         
                         if owner:
                             # Формуємо ім'я власника для notes
