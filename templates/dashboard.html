@@ -168,14 +168,27 @@
                             </td>
                             <td class="col-agent">
                                 <div class="agent-cell">
-                                    <i class="fas fa-user-circle"></i>
-                                    <span>
-                                        {% if lead.agent %}
-                                            {{ lead.agent.username }} ({{ lead.agent.role }})
-                                        {% else %}
-                                            Не вказано
-                                        {% endif %}
-                                    </span>
+                                    {% if current_user.role == 'admin' %}
+                                        <select class="form-select form-select-sm agent-select" 
+                                                data-lead-id="{{ lead.id }}" 
+                                                onchange="changeLeadAgent({{ lead.id }}, this.value)"
+                                                style="font-size: 0.875rem; padding: 0.25rem 0.5rem; min-width: 150px;">
+                                            {% for agent in all_agents %}
+                                                <option value="{{ agent.id }}" {% if lead.agent_id == agent.id %}selected{% endif %}>
+                                                    {{ agent.username }} ({{ agent.role }})
+                                                </option>
+                                            {% endfor %}
+                                        </select>
+                                    {% else %}
+                                        <i class="fas fa-user-circle"></i>
+                                        <span>
+                                            {% if lead.agent %}
+                                                {{ lead.agent.username }} ({{ lead.agent.role }})
+                                            {% else %}
+                                                Не вказано
+                                            {% endif %}
+                                        </span>
+                                    {% endif %}
                                     {% if lead.notes and "HubSpot Deal Owner:" in lead.notes %}
                                         <br><small style="color: #64748b; font-size: 0.75rem;">
                                             HubSpot: {{ lead.notes.split("HubSpot Deal Owner: ")[1].split('\n')[0] }}
@@ -472,6 +485,57 @@ function syncAllLeads() {
     .catch(error => {
         console.error('Error:', error);
         showAlert('danger', 'Помилка при синхронізації');
+    });
+}
+
+// Функція для швидкої зміни агента
+function changeLeadAgent(leadId, agentId) {
+    const selectElement = event.target;
+    const originalValue = selectElement.dataset.originalValue || selectElement.options[selectElement.selectedIndex].value;
+    
+    // Зберігаємо оригінальне значення для можливості відкату
+    if (!selectElement.dataset.originalValue) {
+        selectElement.dataset.originalValue = originalValue;
+    }
+    
+    // Блокуємо select під час завантаження
+    selectElement.disabled = true;
+    
+    fetch(`/api/lead/${leadId}/change_agent`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({ agent_id: parseInt(agentId) })
+    })
+    .then(response => response.json())
+    .then(data => {
+        selectElement.disabled = false;
+        
+        if (data.success) {
+            // Оновлюємо оригінальне значення
+            selectElement.dataset.originalValue = agentId;
+            
+            // Показуємо успішне повідомлення
+            const agentName = data.new_agent.username;
+            const hubspotStatus = data.hubspot_updated ? ' (синхронізовано з HubSpot)' : '';
+            showAlert('success', `✅ Агент змінено на ${agentName}${hubspotStatus}`);
+            
+            // Оновлюємо текст у select
+            const selectedOption = selectElement.options[selectElement.selectedIndex];
+            selectElement.title = `Агент: ${agentName}`;
+        } else {
+            // Відкатуємо зміну
+            selectElement.value = originalValue;
+            showAlert('danger', `❌ ${data.message || 'Помилка зміни агента'}`);
+        }
+    })
+    .catch(error => {
+        selectElement.disabled = false;
+        selectElement.value = originalValue;
+        console.error('Помилка зміни агента:', error);
+        showAlert('danger', 'Помилка при зміні агента');
     });
 }
 

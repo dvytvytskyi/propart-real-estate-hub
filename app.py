@@ -3470,7 +3470,11 @@ def dashboard():
         }
         
         app.logger.info(f"✅ Dashboard: Успішно завантажено {len(leads)} лідів для користувача {current_user.username}")
-        return render_template('dashboard.html', leads=leads, metrics=metrics, sort_by=sort_by, order=order, pagination=pagination)
+        
+        # Отримуємо всіх агентів для дропдауна (тільки для адміна)
+        all_agents = User.query.filter_by(role='agent').order_by(User.username).all() if current_user.role == 'admin' else []
+        
+        return render_template('dashboard.html', leads=leads, metrics=metrics, sort_by=sort_by, order=order, pagination=pagination, all_agents=all_agents)
     
     except Exception as e:
         app.logger.error(f"❌ Помилка в dashboard для користувача {current_user.username if current_user.is_authenticated else 'неавторизований'}: {e}")
@@ -3487,7 +3491,10 @@ def dashboard():
             'conversion_rate': 0,
             'goal_percentage': 0
         }
-        return render_template('dashboard.html', leads=[], metrics=empty_metrics, sort_by='created_at', order='desc', pagination=None)
+        # Отримуємо всіх агентів для дропдауна (тільки для адміна)
+        all_agents = User.query.filter_by(role='agent').order_by(User.username).all() if current_user.role == 'admin' else []
+        
+        return render_template('dashboard.html', leads=[], metrics=empty_metrics, sort_by='created_at', order='desc', pagination=None, all_agents=all_agents)
 
 @app.route('/add_lead', methods=['GET', 'POST'])
 @login_required
@@ -4445,6 +4452,63 @@ def sync_all_leads():
             return jsonify({'success': False, 'message': 'Помилка синхронізації з HubSpot'})
     except Exception as e:
         return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
+
+@app.route('/api/lead/<int:lead_id>/change_agent', methods=['POST'])
+@login_required
+def change_lead_agent(lead_id):
+    """Швидка зміна агента для ліда"""
+    lead = Lead.query.get_or_404(lead_id)
+    
+    # Перевірка прав доступу
+    if current_user.role != 'admin' and lead.agent_id != current_user.id:
+        return jsonify({'success': False, 'message': 'У вас немає прав для зміни агента цього ліда'}), 403
+    
+    try:
+        data = request.get_json()
+        new_agent_id = data.get('agent_id')
+        
+        if not new_agent_id:
+            return jsonify({'success': False, 'message': 'Не вказано ID агента'}), 400
+        
+        # Перевіряємо, чи існує агент
+        new_agent = User.query.get(new_agent_id)
+        if not new_agent:
+            return jsonify({'success': False, 'message': 'Агент не знайдено'}), 404
+        
+        # Зберігаємо старого агента
+        old_agent_id = lead.agent_id
+        old_agent = User.query.get(old_agent_id)
+        
+        # Оновлюємо агента
+        lead.agent_id = new_agent_id
+        
+        # Оновлюємо HubSpot, якщо є deal_id
+        hubspot_updated = False
+        if lead.hubspot_deal_id:
+            try:
+                hubspot_updated = update_hubspot_owner(lead, new_agent_id)
+            except Exception as e:
+                app.logger.error(f"❌ Помилка оновлення HubSpot для ліда {lead.id}: {e}")
+        
+        db.session.commit()
+        
+        app.logger.info(f"✅ Агент ліда {lead.id} змінено: {old_agent.username if old_agent else 'N/A'} (ID: {old_agent_id}) → {new_agent.username} (ID: {new_agent_id})")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Агент успішно змінено на {new_agent.username}',
+            'new_agent': {
+                'id': new_agent.id,
+                'username': new_agent.username,
+                'role': new_agent.role
+            },
+            'hubspot_updated': hubspot_updated
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"❌ Помилка зміни агента для ліда {lead_id}: {e}")
+        return jsonify({'success': False, 'message': f'Помилка: {str(e)}'}), 500
 
 @app.route('/fetch_all_deals', methods=['POST'])
 @login_required
