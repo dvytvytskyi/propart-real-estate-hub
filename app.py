@@ -3759,14 +3759,14 @@ def add_lead():
                             selected_agent = User.query.get(selected_agent_id) if selected_agent_id else current_user
                             agent_username = selected_agent.username if selected_agent else current_user.username
                             
-                            # Використовуємо pipeline "default" з stage "appointmentscheduled"
-                            # Згідно з HubSpot API: pipeline ID = "default", stage ID = "appointmentscheduled"
+                            # Використовуємо pipeline "default" з stage ID "3204738258" (Новая заявка)
+                            # Правильний ID стадії для "Новая заявка" в default pipeline
                             deal_properties = {
                                 "dealname": form.deal_name.data,
                                 "amount": get_budget_value(form.budget.data),
                                 "dealtype": "newbusiness",
                                 "pipeline": "default",  # Pipeline ID для "Лиды" (default pipeline)
-                                "dealstage": "appointmentscheduled",  # Стадія ID для "Новая заявка"
+                                "dealstage": "3204738258",  # Стадія ID для "Новая заявка" (правильний ID!)
                                 "phone_number": formatted_phone,  # Додаємо номер телефону в угоду
                                 "from_agent_portal__name_": agent_username,  # Ім'я агента (обробника), який відповідає за лід
                                 "responisble_agent": agent_username,  # Відповідальний агент в CRM (ВАЖЛИВО для синхронізації!)
@@ -3792,6 +3792,52 @@ def add_lead():
                             hubspot_deal = hubspot_client.crm.deals.basic_api.create(deal_input)
                             hubspot_deal_id = str(hubspot_deal.id)
                             print(f"HubSpot угода створено успішно: {hubspot_deal_id}")
+                            
+                            # Отримуємо створений deal з HubSpot, щоб встановити правильний статус та hubspot_stage_label
+                            try:
+                                created_deal_full = hubspot_client.crm.deals.basic_api.get_by_id(
+                                    deal_id=hubspot_deal_id,
+                                    properties=["dealstage"]
+                                )
+                                
+                                if created_deal_full.properties and created_deal_full.properties.get('dealstage'):
+                                    dealstage_id = created_deal_full.properties['dealstage']
+                                    
+                                    # Маппінг стадій HubSpot на наші статуси
+                                    stage_mapping = {
+                                        '3204738258': 'new',        # Новая заявка
+                                        '3204738259': 'contacted',  # Контакт встановлено
+                                        '3204738261': 'qualified',  # Кваліфіковано
+                                        '3204738262': 'qualified',  # Встреча проведена
+                                        '3204738265': 'qualified',  # Переговоры
+                                        '3204738266': 'qualified',  # Задаток
+                                        '3204738267': 'closed'      # Сделка закрыта
+                                    }
+                                    
+                                    stage_labels = {
+                                        '3204738258': 'Запрос получен',
+                                        '3204738259': 'Отправлены варианты/Передан на партнеров',
+                                        '3204738261': 'Назначена встреча/тур',
+                                        '3204738262': 'Встреча/тур проведены',
+                                        '3204738265': 'Переговоры',
+                                        '3204738266': 'Задаток',
+                                        '3204738267': 'Сделка закрыта'
+                                    }
+                                    
+                                    # Встановлюємо статус та label
+                                    if dealstage_id in stage_mapping:
+                                        lead.status = stage_mapping[dealstage_id]
+                                        print(f"✅ Встановлено статус з HubSpot: {lead.status}")
+                                    
+                                    if dealstage_id in stage_labels:
+                                        lead.hubspot_stage_label = stage_labels[dealstage_id]
+                                        print(f"✅ Встановлено hubspot_stage_label: {lead.hubspot_stage_label}")
+                                    
+                                    # Зберігаємо зміни
+                                    db.session.commit()
+                            except Exception as stage_error:
+                                print(f"⚠️ Помилка отримання dealstage з HubSpot: {stage_error}")
+                                app.logger.warning(f"⚠️ Помилка отримання dealstage для нового ліда {lead.id}: {stage_error}")
                             
                             # Перевіряємо, чи email передався в угоду, якщо ні - оновлюємо окремо
                             if form.email.data and form.email.data.strip() and hubspot_deal_id:
