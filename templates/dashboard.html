@@ -171,11 +171,12 @@
                                     {% if current_user.role == 'admin' %}
                                         <select class="form-select form-select-sm agent-select" 
                                                 data-lead-id="{{ lead.id }}" 
+                                                data-original-value="{{ lead.agent_id }}"
                                                 onchange="changeLeadAgent({{ lead.id }}, this.value)"
-                                                style="font-size: 0.875rem; padding: 0.25rem 0.5rem; min-width: 150px;">
+                                                style="font-size: 0.875rem; padding: 0.25rem 0.5rem; min-width: 180px; border: 1px solid #d1d5db; border-radius: 4px; cursor: pointer;">
                                             {% for agent in all_agents %}
                                                 <option value="{{ agent.id }}" {% if lead.agent_id == agent.id %}selected{% endif %}>
-                                                    {{ agent.username }} ({{ agent.role }})
+                                                    {{ agent.username }}
                                                 </option>
                                             {% endfor %}
                                         </select>
@@ -491,15 +492,17 @@ function syncAllLeads() {
 // Функція для швидкої зміни агента
 function changeLeadAgent(leadId, agentId) {
     const selectElement = event.target;
-    const originalValue = selectElement.dataset.originalValue || selectElement.options[selectElement.selectedIndex].value;
+    const originalValue = selectElement.dataset.originalValue || selectElement.value;
     
-    // Зберігаємо оригінальне значення для можливості відкату
+    // Зберігаємо оригінальне значення для можливості відкату (якщо ще не збережено)
     if (!selectElement.dataset.originalValue) {
         selectElement.dataset.originalValue = originalValue;
     }
     
     // Блокуємо select під час завантаження
     selectElement.disabled = true;
+    const originalBg = selectElement.style.backgroundColor;
+    selectElement.style.backgroundColor = '#f3f4f6';
     
     fetch(`/api/lead/${leadId}/change_agent`, {
         method: 'POST',
@@ -512,6 +515,7 @@ function changeLeadAgent(leadId, agentId) {
     .then(response => response.json())
     .then(data => {
         selectElement.disabled = false;
+        selectElement.style.backgroundColor = originalBg;
         
         if (data.success) {
             // Оновлюємо оригінальне значення
@@ -521,10 +525,6 @@ function changeLeadAgent(leadId, agentId) {
             const agentName = data.new_agent.username;
             const hubspotStatus = data.hubspot_updated ? ' (синхронізовано з HubSpot)' : '';
             showAlert('success', `✅ Агент змінено на ${agentName}${hubspotStatus}`);
-            
-            // Оновлюємо текст у select
-            const selectedOption = selectElement.options[selectElement.selectedIndex];
-            selectElement.title = `Агент: ${agentName}`;
         } else {
             // Відкатуємо зміну
             selectElement.value = originalValue;
@@ -533,6 +533,7 @@ function changeLeadAgent(leadId, agentId) {
     })
     .catch(error => {
         selectElement.disabled = false;
+        selectElement.style.backgroundColor = originalBg;
         selectElement.value = originalValue;
         console.error('Помилка зміни агента:', error);
         showAlert('danger', 'Помилка при зміні агента');
