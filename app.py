@@ -5430,7 +5430,8 @@ def get_all_hubspot_pipelines():
 @login_required
 def properties():
     """Список всіх нерухомості"""
-    properties = Property.query.order_by(Property.created_at.desc()).all()
+    from sqlalchemy.orm import joinedload
+    properties = Property.query.options(joinedload(Property.photos)).order_by(Property.created_at.desc()).all()
     return render_template('properties.html', properties=properties)
 
 
