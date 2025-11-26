@@ -3682,13 +3682,19 @@ def add_lead():
             hubspot_sync_success = False
             
             # Тепер пробуємо синхронізувати з HubSpot (не блокує відповідь при помилці)
+            app.logger.info(f"🔍 Перевірка HubSpot клієнта: hubspot_client = {hubspot_client is not None}, HUBSPOT_API_KEY = {'встановлено' if HUBSPOT_API_KEY else 'НЕ встановлено'}")
+            
             if hubspot_client:
+                app.logger.info(f"✅ HubSpot клієнт доступний, починаємо синхронізацію...")
                 print(f"=== ПОЧАТОК СТВОРЕННЯ КОНТАКТУ В HUBSPOT ===")
                 print(f"Email: {form.email.data}")
                 print(f"Deal name: {form.deal_name.data}")
                 print(f"Phone: {formatted_phone}")
                 print(f"Budget: {form.budget.data}")
                 print(f"HubSpot client: {hubspot_client}")
+            else:
+                app.logger.warning(f"⚠️ HubSpot клієнт не доступний! hubspot_client = {hubspot_client}, HUBSPOT_API_KEY = {'встановлено' if HUBSPOT_API_KEY else 'НЕ встановлено'}")
+                print(f"⚠️ HubSpot клієнт не доступний, пропускаємо синхронізацію")
                 try:
                     # Перевіряємо, чи існує контакт з таким email
                     from hubspot.crm.contacts import SimplePublicObjectInput
@@ -3968,8 +3974,9 @@ def add_lead():
                     
                 except Exception as hubspot_error:
                     error_msg = str(hubspot_error)
+                    error_type = type(hubspot_error).__name__
                     print(f"=== ДЕТАЛЬНА ПОМИЛКА HUBSPOT ===")
-                    print(f"Тип помилки: {type(hubspot_error).__name__}")
+                    print(f"Тип помилки: {error_type}")
                     print(f"Повідомлення: {error_msg}")
                     print(f"Email: {form.email.data}")
                     print(f"Deal name: {form.deal_name.data}")
@@ -3977,9 +3984,11 @@ def add_lead():
                     print(f"Budget: {form.budget.data}")
                     traceback.print_exc()
                     
-                    # Логуємо в файл
-                    app.logger.error(f"HubSpot помилка при створенні ліда: {error_msg}")
-                    app.logger.error(f"Деталі: email={form.email.data}, deal_name={form.deal_name.data}, phone={formatted_phone}")
+                    # Логуємо в файл з деталями
+                    app.logger.error(f"❌ HubSpot помилка при створенні ліда {lead.id}: {error_type}: {error_msg}")
+                    app.logger.error(f"   Деталі: email={form.email.data}, deal_name={form.deal_name.data}, phone={formatted_phone}")
+                    app.logger.error(f"   HubSpot client доступний: {hubspot_client is not None}")
+                    app.logger.error(f"   HUBSPOT_API_KEY встановлено: {HUBSPOT_API_KEY is not None}")
                     
                     # Логуємо помилку, але не блокуємо успішне створення ліда
                     # Лід вже збережений в локальній БД, тому просто додаємо повідомлення
