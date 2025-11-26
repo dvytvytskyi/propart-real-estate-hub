@@ -3692,9 +3692,6 @@ def add_lead():
                 print(f"Phone: {formatted_phone}")
                 print(f"Budget: {form.budget.data}")
                 print(f"HubSpot client: {hubspot_client}")
-            else:
-                app.logger.warning(f"⚠️ HubSpot клієнт не доступний! hubspot_client = {hubspot_client}, HUBSPOT_API_KEY = {'встановлено' if HUBSPOT_API_KEY else 'НЕ встановлено'}")
-                print(f"⚠️ HubSpot клієнт не доступний, пропускаємо синхронізацію")
                 try:
                     # Перевіряємо, чи існує контакт з таким email
                     from hubspot.crm.contacts import SimplePublicObjectInput
@@ -4004,7 +4001,8 @@ def add_lead():
                         flash(f'Лід додано локально. Помилка HubSpot: {error_msg[:100]}...', 'warning')
                     # Продовжуємо виконання - лід вже збережений, просто без HubSpot синхронізації
             else:
-                print("HubSpot клієнт не налаштований")
+                app.logger.warning(f"⚠️ HubSpot клієнт не доступний! hubspot_client = {hubspot_client}, HUBSPOT_API_KEY = {'встановлено' if HUBSPOT_API_KEY else 'НЕ встановлено'}")
+                print("⚠️ HubSpot клієнт не налаштований, пропускаємо синхронізацію")
             
             # ⚡ ОПТИМІЗАЦІЯ: Оновлюємо лід з HubSpot ID, якщо синхронізація успішна
             if hubspot_contact_id or hubspot_deal_id:
