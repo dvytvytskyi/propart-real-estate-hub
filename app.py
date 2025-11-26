@@ -3378,7 +3378,8 @@ def dashboard():
         from sqlalchemy import func, case
         
         # Отримуємо параметри сортування та пагінації з URL
-        sort_by = request.args.get('sort_by', 'created_at')  # За замовчуванням сортуємо по даті додавання
+        # За замовчуванням сортуємо по ID (стабільний порядок, не змінюється при редагуванні)
+        sort_by = request.args.get('sort_by', 'id')  # За замовчуванням сортуємо по ID для стабільності
         order = request.args.get('order', 'desc')  # За замовчуванням - від нових до старих
         page = request.args.get('page', 1, type=int)  # Номер сторінки
         per_page = 20  # Кількість лідів на сторінку
@@ -3416,6 +3417,7 @@ def dashboard():
             leads_query = Lead.query.filter(Lead.agent_id == agent_id_value).options(joinedload(Lead.agent))
         
         # Застосовуємо сортування
+        # Додаємо вторинне сортування по ID для стабільності порядку
         if sort_by == 'status':
             # Для статусу використовуємо custom порядок: new -> contacted -> qualified -> closed
             status_order = case(
@@ -3426,19 +3428,28 @@ def dashboard():
                 else_=5
             )
             if order == 'asc':
-                leads_query = leads_query.order_by(status_order.asc())
+                leads_query = leads_query.order_by(status_order.asc(), Lead.id.desc())
             else:
-                leads_query = leads_query.order_by(status_order.desc())
+                leads_query = leads_query.order_by(status_order.desc(), Lead.id.desc())
         elif sort_by == 'created_at':
             if order == 'asc':
-                leads_query = leads_query.order_by(Lead.created_at.asc())
+                leads_query = leads_query.order_by(Lead.created_at.asc(), Lead.id.asc())
             else:
-                leads_query = leads_query.order_by(Lead.created_at.desc())
+                leads_query = leads_query.order_by(Lead.created_at.desc(), Lead.id.desc())
         elif sort_by == 'updated_at':
             if order == 'asc':
-                leads_query = leads_query.order_by(Lead.updated_at.asc())
+                leads_query = leads_query.order_by(Lead.updated_at.asc(), Lead.id.asc())
             else:
-                leads_query = leads_query.order_by(Lead.updated_at.desc())
+                leads_query = leads_query.order_by(Lead.updated_at.desc(), Lead.id.desc())
+        elif sort_by == 'id':
+            # Сортування по ID (за замовчуванням) - найстабільніший порядок
+            if order == 'asc':
+                leads_query = leads_query.order_by(Lead.id.asc())
+            else:
+                leads_query = leads_query.order_by(Lead.id.desc())
+        else:
+            # Якщо невідоме поле сортування - використовуємо ID за замовчуванням
+            leads_query = leads_query.order_by(Lead.id.desc())
         
         # Отримуємо ліди з пагінацією
         pagination = leads_query.paginate(page=page, per_page=per_page, error_out=False)
@@ -3552,7 +3563,7 @@ def dashboard():
         # Отримуємо всіх агентів для дропдауна (тільки для адміна)
         all_agents = User.query.filter_by(role='agent').order_by(User.username).all() if current_user.role == 'admin' else []
         
-        return render_template('dashboard.html', leads=[], metrics=empty_metrics, sort_by='created_at', order='desc', pagination=None, all_agents=all_agents)
+        return render_template('dashboard.html', leads=[], metrics=empty_metrics, sort_by='id', order='desc', pagination=None, all_agents=all_agents)
 
 @app.route('/add_lead', methods=['GET', 'POST'])
 @login_required
