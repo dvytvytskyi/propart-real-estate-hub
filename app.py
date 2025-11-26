@@ -3111,20 +3111,30 @@ def register():
 @login_required
 def request_verification():
     """Запит на верифікацію від агента"""
+    app.logger.info(f"🔍 REQUEST_VERIFICATION: Користувач {current_user.username} (ID: {current_user.id}, role: {current_user.role})")
+    
     if current_user.role == 'admin':
+        app.logger.warning(f"⚠️ Адмін {current_user.username} намагається подати запит на верифікацію")
         return jsonify({'success': False, 'message': 'Адміністратори не потребують верифікації'})
     
     if current_user.verification_requested:
+        app.logger.info(f"ℹ️ Користувач {current_user.username} вже подавав запит на верифікацію")
         return jsonify({'success': False, 'message': 'Ви вже подавали запит на верифікацію'})
     
     try:
+        app.logger.info(f"💾 Встановлюємо verification_requested для {current_user.username}")
         current_user.verification_requested = True
         current_user.verification_request_date = get_ukraine_time()
+        
+        app.logger.info(f"💾 Комітимо зміни в БД...")
         db.session.commit()
+        app.logger.info(f"✅ Запит на верифікацію успішно збережено для {current_user.username}")
         
         return jsonify({'success': True, 'message': 'Запит на верифікацію подано успішно'})
     except Exception as e:
         db.session.rollback()
+        app.logger.error(f"❌ Помилка при подачі запиту на верифікацію для {current_user.username}: {e}")
+        app.logger.error(traceback.format_exc())
         return jsonify({'success': False, 'message': f'Помилка: {str(e)}'})
 
 @app.route('/close_deal/<int:lead_id>', methods=['POST'])
@@ -3383,9 +3393,13 @@ def dashboard():
             leads_query = Lead.query.options(joinedload(Lead.agent))
             app.logger.debug(f"Dashboard: Адмін - завантаження всіх лідів з eager loading")
         else:
-            # Агент бачить тільки свої ліди
-            leads_query = Lead.query.filter_by(agent_id=current_user.id).options(joinedload(Lead.agent))
-            app.logger.debug(f"Dashboard: Агент {current_user.id} - завантаження своїх лідів з eager loading")
+            # Агент бачить тільки свої ліди (де agent_id == current_user.id)
+            # Використовуємо filter() замість filter_by() для кращої підтримки NULL значень
+            leads_query = Lead.query.filter(Lead.agent_id == current_user.id).options(joinedload(Lead.agent))
+            app.logger.info(f"Dashboard: Агент {current_user.username} (ID: {current_user.id}) - завантаження своїх лідів")
+            # Додаткова діагностика: перевіряємо скільки ліди мають цього агента
+            total_leads_for_agent = Lead.query.filter(Lead.agent_id == current_user.id).count()
+            app.logger.info(f"Dashboard: Знайдено {total_leads_for_agent} лідів для агента {current_user.username}")
         
         # Застосовуємо сортування
         if sort_by == 'status':
@@ -3428,6 +3442,7 @@ def dashboard():
             )
         else:
             # Агент: рахуємо тільки свої ліди (як і в пагінації)
+            # Використовуємо filter() замість filter_by() для кращої підтримки NULL значень
             metrics_query = db.session.query(
                 func.count(Lead.id).label('total_leads'),
                 func.count(case((Lead.status.in_(['new', 'contacted', 'qualified']), 1))).label('active_leads'),
@@ -3460,6 +3475,7 @@ def dashboard():
             budget_query = db.session.query(func.sum(budget_case))
         else:
             # Агент: рахуємо тільки по своїх лідах
+            # Використовуємо filter() замість filter_by() для кращої підтримки NULL значень
             budget_query = db.session.query(func.sum(budget_case)).filter(Lead.agent_id == current_user.id)
         
         total_budget_result = budget_query.scalar()
@@ -3591,6 +3607,15 @@ def add_lead():
             app.logger.info("💾 Створюємо лід у локальній БД...")
             # Отримуємо agent_id з форми (для адміна може бути вибраний інший агент)
             selected_agent_id = form.agent_id.data if form.agent_id.data else current_user.id
+            
+            # Перевіряємо, чи агент існує
+            selected_agent = User.query.get(selected_agent_id)
+            if not selected_agent:
+                app.logger.error(f"❌ Агент з ID {selected_agent_id} не знайдено!")
+                flash(f'Помилка: Агент не знайдено', 'error')
+                return redirect(url_for('add_lead'))
+            
+            app.logger.info(f"✅ Вибрано агента: {selected_agent.username} (ID: {selected_agent_id})")
             
             # Створюємо лід локально
             lead = Lead(
