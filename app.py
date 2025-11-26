@@ -3788,14 +3788,20 @@ def add_lead():
                             hubspot_contact_id = str(hubspot_contact.id)
                             print(f"HubSpot контакт створено: {hubspot_contact_id}")
                         except Exception as create_error:
+                            error_type = type(create_error).__name__
+                            error_msg = str(create_error)
                             print(f"=== ПОМИЛКА СТВОРЕННЯ КОНТАКТУ ===")
                             print(f"Помилка створення контакту: {create_error}")
-                            print(f"Тип помилки: {type(create_error).__name__}")
+                            print(f"Тип помилки: {error_type}")
                             print(f"Email: {form.email.data}")
                             print(f"Phone: {formatted_phone}")
                             traceback.print_exc()
                             # Логуємо помилку, але продовжуємо роботу (лід вже збережений в БД)
-                            app.logger.warning(f"⚠️ Помилка створення HubSpot контакту: {create_error}")
+                            app.logger.error(f"❌ Помилка створення HubSpot контакту для ліда {lead.id}: {error_type}: {error_msg}")
+                            app.logger.error(f"   Деталі: email={form.email.data}, phone={formatted_phone}")
+                            # Перевіряємо, чи це проблема з мережею
+                            if "NameResolutionError" in error_type or "Failed to resolve" in error_msg:
+                                app.logger.error(f"   ⚠️ ПРОБЛЕМА З МЕРЕЖЕЮ/DNS: Не вдається вирішити 'api.hubapi.com'")
                             # Не прокидаємо помилку далі - лід вже збережений локально
                     
                     # Створюємо deal в HubSpot (тільки якщо контакт створений)
@@ -3859,8 +3865,10 @@ def add_lead():
                             print(f"📋 Властивості угоди для HubSpot: {deal_properties}")
                             deal_input = DealInput(properties=deal_properties)
                             print(f"Створюємо угоду з вхідними даними: {deal_input}")
+                            app.logger.info(f"📤 Створюємо HubSpot угоду з властивостями: {deal_properties}")
                             hubspot_deal = hubspot_client.crm.deals.basic_api.create(deal_input)
                             hubspot_deal_id = str(hubspot_deal.id)
+                            app.logger.info(f"✅ HubSpot угода створено успішно: {hubspot_deal_id}")
                             print(f"HubSpot угода створено успішно: {hubspot_deal_id}")
                             
                             # Отримуємо створений deal з HubSpot, щоб встановити правильний статус та hubspot_stage_label
@@ -3954,9 +3962,14 @@ def add_lead():
                                 app.logger.warning(f"⚠️ Помилка створення зв'язку HubSpot: {assoc_error}")
                                 # Не критична помилка - продовжуємо
                         except Exception as deal_error:
+                            error_type = type(deal_error).__name__
+                            error_msg = str(deal_error)
                             print(f"=== ПОМИЛКА СТВОРЕННЯ УГОДИ ===")
                             print(f"Помилка створення угоди: {deal_error}")
-                            app.logger.warning(f"⚠️ Помилка створення HubSpot угоди: {deal_error}")
+                            app.logger.error(f"❌ Помилка створення HubSpot угоди для ліда {lead.id}: {error_type}: {error_msg}")
+                            # Перевіряємо, чи це проблема з мережею
+                            if "NameResolutionError" in error_type or "Failed to resolve" in error_msg:
+                                app.logger.error(f"   ⚠️ ПРОБЛЕМА З МЕРЕЖЕЮ/DNS: Не вдається вирішити 'api.hubapi.com'")
                             # Не критична помилка - контакт вже створений, продовжуємо
                     else:
                         print("⚠️ HubSpot контакт не створений, пропускаємо створення угоди")
