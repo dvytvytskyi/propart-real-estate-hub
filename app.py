@@ -3512,7 +3512,9 @@ def dashboard():
         
         # Ціль: 10,000 поінтів
         target_points = 10000
-        goal_percentage = min(100, (current_user.points / target_points * 100)) if target_points > 0 else 0
+        # Переконуємося, що points не None
+        user_points = current_user.points if current_user.points is not None else 0
+        goal_percentage = min(100, (user_points / target_points * 100)) if target_points > 0 else 0
     
         metrics = {
             'total_leads': total_leads,
