@@ -4383,7 +4383,10 @@ def delete_comment(comment_id):
 @app.route('/lead/<int:lead_id>')
 @login_required
 def view_lead(lead_id):
-    lead = Lead.query.get_or_404(lead_id)
+    # Використовуємо eager loading для agent relationship
+    from sqlalchemy.orm import joinedload
+    lead = Lead.query.options(joinedload(Lead.agent)).get_or_404(lead_id)
+    
     if lead.agent_id != current_user.id and current_user.role != 'admin':
         flash('У вас немає прав для перегляду цього ліда')
         return redirect(url_for('dashboard'))
@@ -4391,7 +4394,8 @@ def view_lead(lead_id):
     # Синхронізація тепер відбувається автоматично у фоні кожні 60 секунд
     # Для ручного оновлення є кнопка "Оновити" на сторінці
     
-    agent = User.query.get(lead.agent_id)
+    # Отримуємо агента через relationship (який вже завантажений через eager loading)
+    agent = lead.agent
     notes = []  # Нотатки видалені з системи
     
     try:
@@ -4566,6 +4570,7 @@ def change_lead_agent(lead_id):
         old_agent = User.query.get(old_agent_id)
         
         # Оновлюємо агента
+        app.logger.info(f"🔄 Зміна агента для ліда {lead.id}: {old_agent.username if old_agent else 'N/A'} (ID: {old_agent_id}) → {new_agent.username} (ID: {new_agent_id})")
         lead.agent_id = new_agent_id
         
         # Оновлюємо HubSpot, якщо є deal_id
@@ -4578,7 +4583,17 @@ def change_lead_agent(lead_id):
         
         db.session.commit()
         
+        # Оновлюємо relationship після commit
+        db.session.refresh(lead)
+        
+        # Перевіряємо, що зміни збережені
+        updated_lead = Lead.query.get(lead_id)
         app.logger.info(f"✅ Агент ліда {lead.id} змінено: {old_agent.username if old_agent else 'N/A'} (ID: {old_agent_id}) → {new_agent.username} (ID: {new_agent_id})")
+        app.logger.info(f"🔍 Перевірка: lead.agent_id = {updated_lead.agent_id}, new_agent_id = {new_agent_id}")
+        if updated_lead.agent:
+            app.logger.info(f"🔍 Relationship працює: lead.agent.username = {updated_lead.agent.username}")
+        else:
+            app.logger.warning(f"⚠️ Relationship не працює: lead.agent = None")
         
         return jsonify({
             'success': True,
