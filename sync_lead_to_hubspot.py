@@ -133,7 +133,23 @@ def sync_lead_to_hubspot(lead_id):
                     )
                     print(f"✅ Зв'язок між контактом та deal створено")
                 except Exception as assoc_error:
-                    print(f"⚠️ Помилка створення зв'язку: {assoc_error}")
+                    # Спробуємо альтернативний метод через v4 API
+                    try:
+                        import requests
+                        from app import HUBSPOT_API_KEY
+                        url = f"https://api.hubapi.com/crm/v4/objects/contacts/{hubspot_contact_id}/associations/deals/{hubspot_deal_id}"
+                        headers = {
+                            "Authorization": f"Bearer {HUBSPOT_API_KEY}",
+                            "Content-Type": "application/json"
+                        }
+                        response = requests.put(url, headers=headers, json={"associationCategory": "HUBSPOT_DEFINED", "associationTypeId": 3})
+                        if response.status_code in [200, 201]:
+                            print(f"✅ Зв'язок між контактом та deal створено (через v4 API)")
+                        else:
+                            print(f"⚠️ Помилка створення зв'язку через v4 API: {response.status_code} - {response.text}")
+                    except Exception as v4_error:
+                        print(f"⚠️ Помилка створення зв'язку: {assoc_error}, v4: {v4_error}")
+                        # Не критична помилка - контакт і deal вже створені
             
             # Оновлюємо лід
             lead.hubspot_contact_id = hubspot_contact_id
