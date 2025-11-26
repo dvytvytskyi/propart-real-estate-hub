@@ -11,7 +11,6 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app import app, db, Lead, User
-from hubspot.crm.deals import DealInput
 
 def sync_lead_to_hubspot(lead_id):
     """Синхронізує лід з HubSpot (створює deal, якщо його немає)"""
@@ -115,6 +114,7 @@ def sync_lead_to_hubspot(lead_id):
             if hubspot_owner_id:
                 deal_properties["hubspot_owner_id"] = hubspot_owner_id
             
+            from hubspot.crm.deals import SimplePublicObjectInput as DealInput
             deal_input = DealInput(properties=deal_properties)
             hubspot_deal = hubspot_client.crm.deals.basic_api.create(deal_input)
             hubspot_deal_id = str(hubspot_deal.id)
