@@ -3444,6 +3444,17 @@ def dashboard():
         pagination = leads_query.paginate(page=page, per_page=per_page, error_out=False)
         leads = pagination.items
         
+        # Додаткова діагностика для агентів
+        if current_user.role == 'agent':
+            app.logger.info(f"🔍 Dashboard: Після пагінації отримано {len(leads)} лідів для агента {current_user.username} (ID: {current_user.id})")
+            if len(leads) == 0:
+                # Перевіряємо, чи є ліди взагалі
+                total_count = Lead.query.filter(Lead.agent_id == current_user.id).count()
+                app.logger.warning(f"⚠️ Dashboard: Немає ліди на сторінці, але всього в БД: {total_count} лідів для агента {current_user.username}")
+                # Перевіряємо перші 5 ліди без пагінації
+                sample_leads = Lead.query.filter(Lead.agent_id == current_user.id).limit(5).all()
+                app.logger.info(f"🔍 Dashboard: Приклад ліди без пагінації: {[lead.id for lead in sample_leads]}")
+        
         # ⚡ ОПТИМІЗАЦІЯ: Використовуємо SQL агрегацію замість Python циклів
         # Базовий запит для метрик - рахуємо ті самі ліди, що показує пагінація
         if current_user.role == 'admin':
