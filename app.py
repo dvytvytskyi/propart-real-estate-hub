@@ -3395,11 +3395,25 @@ def dashboard():
         else:
             # Агент бачить тільки свої ліди (де agent_id == current_user.id)
             # Використовуємо filter() замість filter_by() для кращої підтримки NULL значень
-            leads_query = Lead.query.filter(Lead.agent_id == current_user.id).options(joinedload(Lead.agent))
-            app.logger.info(f"Dashboard: Агент {current_user.username} (ID: {current_user.id}) - завантаження своїх лідів")
+            # Переконуємося, що agent_id не NULL і дорівнює current_user.id
+            agent_id_value = int(current_user.id)  # Переконуємося, що це int
+            app.logger.info(f"Dashboard: Агент {current_user.username} (ID: {agent_id_value}, type: {type(agent_id_value).__name__}) - завантаження своїх лідів")
+            
             # Додаткова діагностика: перевіряємо скільки ліди мають цього агента
-            total_leads_for_agent = Lead.query.filter(Lead.agent_id == current_user.id).count()
-            app.logger.info(f"Dashboard: Знайдено {total_leads_for_agent} лідів для агента {current_user.username}")
+            total_leads_for_agent = Lead.query.filter(Lead.agent_id == agent_id_value).count()
+            app.logger.info(f"Dashboard: Знайдено {total_leads_for_agent} лідів для агента {current_user.username} (agent_id = {agent_id_value})")
+            
+            # Перевіряємо, чи є ліди з NULL agent_id
+            null_agent_leads = Lead.query.filter(Lead.agent_id.is_(None)).count()
+            if null_agent_leads > 0:
+                app.logger.warning(f"⚠️ Знайдено {null_agent_leads} лідів з NULL agent_id")
+            
+            # Перевіряємо, чи є ліди з іншими agent_id (для діагностики)
+            sample_leads = Lead.query.limit(5).all()
+            for sample_lead in sample_leads:
+                app.logger.debug(f"   Лід {sample_lead.id}: agent_id = {sample_lead.agent_id} (type: {type(sample_lead.agent_id).__name__})")
+            
+            leads_query = Lead.query.filter(Lead.agent_id == agent_id_value).options(joinedload(Lead.agent))
         
         # Застосовуємо сортування
         if sort_by == 'status':
@@ -4571,7 +4585,11 @@ def change_lead_agent(lead_id):
         
         # Оновлюємо агента
         app.logger.info(f"🔄 Зміна агента для ліда {lead.id}: {old_agent.username if old_agent else 'N/A'} (ID: {old_agent_id}) → {new_agent.username} (ID: {new_agent_id})")
-        lead.agent_id = new_agent_id
+        
+        # Переконуємося, що new_agent_id це int
+        new_agent_id_int = int(new_agent_id)
+        lead.agent_id = new_agent_id_int
+        app.logger.info(f"💾 Встановлено lead.agent_id = {new_agent_id_int} (type: {type(lead.agent_id).__name__})")
         
         # Оновлюємо HubSpot, якщо є deal_id
         hubspot_updated = False
