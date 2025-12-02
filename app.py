@@ -3863,7 +3863,7 @@ def add_lead():
                                 "dealstage": "3204738258",  # Стадія ID для "Новая заявка" (правильний ID!)
                                 "phone_number": formatted_phone,  # Додаємо номер телефону в угоду
                                 "from_agent_portal__name_": agent_username,  # Ім'я агента (обробника), який відповідає за лід
-                                "responisble_agent": agent_username,  # Відповідальний агент в CRM (ВАЖЛИВО для синхронізації!)
+                                # "responisble_agent": agent_username,  # Поле не існує в HubSpot, видалено
                             }
                             
                             # Додаємо email як окреме поле в угоді (internal name: "email")
