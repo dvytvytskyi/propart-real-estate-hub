@@ -3889,6 +3889,11 @@ def add_lead():
                             app.logger.info(f"✅ HubSpot угода створено успішно: {hubspot_deal_id}")
                             print(f"HubSpot угода створено успішно: {hubspot_deal_id}")
                             
+                            # ВАЖЛИВО: Зберігаємо deal_id одразу після створення, навіть якщо далі буде помилка
+                            lead.hubspot_deal_id = hubspot_deal_id
+                            db.session.commit()
+                            app.logger.info(f"💾 HubSpot deal_id збережено в БД для ліда {lead.id}: {hubspot_deal_id}")
+                            
                             # Отримуємо створений deal з HubSpot, щоб встановити правильний статус та hubspot_stage_label
                             try:
                                 created_deal_full = hubspot_client.crm.deals.basic_api.get_by_id(
@@ -5037,11 +5042,21 @@ def admin_users():
     # Отримуємо всіх користувачів (сортуємо за датою створення, найновіші зверху)
     users = User.query.order_by(User.created_at.desc()).all()
     
-    # Додаємо кількість документів для кожного користувача
+    # Додаємо кількість документів та реальну кількість ліди для кожного користувача
     users_with_docs = []
     for user in users:
         doc_count = UserDocument.query.filter_by(user_id=user.id).count()
         user.doc_count = doc_count
+        
+        # Рахуємо реальну кількість ліди для агентів
+        if user.role == 'agent':
+            actual_leads_count = Lead.query.filter_by(agent_id=user.id).count()
+            user.total_leads = actual_leads_count if actual_leads_count > 0 else (user.total_leads or 0)
+            # Оновлюємо в БД, якщо значення відрізняється
+            if user.total_leads != actual_leads_count:
+                user.total_leads = actual_leads_count
+                db.session.commit()
+        
         users_with_docs.append(user)
     
     return render_template('admin_users.html', users=users_with_docs)
