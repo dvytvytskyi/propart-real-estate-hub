@@ -413,16 +413,19 @@ class User(UserMixin, db.Model):
     
     def add_points(self, points):
         """Додає поінти та оновлює рівень"""
+        if self.points is None:
+            self.points = 0
         self.points += points
         self.update_level()
     
     def update_level(self):
         """Оновлює рівень на основі поінтів"""
-        if self.points >= 10000:
+        current_points = self.points if self.points is not None else 0
+        if current_points >= 10000:
             self.level = 'platinum'
-        elif self.points >= 5000:
+        elif current_points >= 5000:
             self.level = 'gold'
-        elif self.points >= 2000:
+        elif current_points >= 2000:
             self.level = 'silver'
         else:
             self.level = 'bronze'
@@ -3156,6 +3159,8 @@ def close_deal(lead_id):
         agent = User.query.get(lead.agent_id)
         if agent:
             agent.add_points(1000)  # 1000 поінтів за закриту угоду
+            if agent.closed_deals is None:
+                agent.closed_deals = 0
             agent.closed_deals += 1
             print(f"Нараховано 1000 поінтів агенту {agent.username} за закриття угоди")
         
@@ -3680,6 +3685,8 @@ def add_lead():
             if agent:
                 app.logger.info(f"🎯 Нараховуємо 100 поінтів агенту {agent.username}")
                 agent.add_points(100)  # 100 поінтів за лід
+                if agent.total_leads is None:
+                    agent.total_leads = 0
                 agent.total_leads += 1
             
             # Комітимо зміни в БД ПЕРЕД HubSpot викликами
