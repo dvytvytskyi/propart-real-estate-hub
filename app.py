@@ -3853,14 +3853,14 @@ def add_lead():
                             selected_agent = User.query.get(selected_agent_id) if selected_agent_id else current_user
                             agent_username = selected_agent.username if selected_agent else current_user.username
                             
-                            # Використовуємо pipeline "default" з stage ID "3204738258" (Новая заявка)
-                            # Правильний ID стадії для "Новая заявка" в default pipeline
+                            # Використовуємо pipeline "2341107958" ("Лиды") з stage ID "3204738258" (Новая заявка)
+                            # Правильний ID стадії для "Новая заявка" в pipeline "Лиды"
                             deal_properties = {
                                 "dealname": form.deal_name.data,
                                 "amount": get_budget_value(form.budget.data),
                                 "dealtype": "newbusiness",
-                                "pipeline": "default",  # Pipeline ID для "Лиды" (default pipeline)
-                                "dealstage": "3204738258",  # Стадія ID для "Новая заявка" (правильний ID!)
+                                "pipeline": "2341107958",  # Pipeline ID для "Лиды"
+                                "dealstage": "3204738258",  # Стадія ID для "Новая заявка"
                                 "phone_number": formatted_phone,  # Додаємо номер телефону в угоду
                                 "from_agent_portal__name_": agent_username,  # Ім'я агента (обробника), який відповідає за лід
                                 # "responisble_agent": agent_username,  # Поле не існує в HubSpot, видалено

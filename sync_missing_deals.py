@@ -83,7 +83,7 @@ def sync_missing_deals():
                     "dealname": lead.deal_name,
                     "amount": get_budget_value(lead.budget) if lead.budget else None,
                     "dealtype": "newbusiness",
-                    "pipeline": "default",
+                    "pipeline": "2341107958",  # Pipeline ID для "Лиды"
                     "dealstage": "3204738258",  # Новая заявка
                     "phone_number": lead.phone if lead.phone else None,
                     "from_agent_portal__name_": agent.username if agent else None,
