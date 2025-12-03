@@ -18,11 +18,6 @@
             </div>
         </div>
         <div class="header-actions" style="display: flex; gap: 0.5rem;">
-            {% if current_user.role == 'admin' %}
-            <button id="fetchAllDealsBtn" class="btn btn-success btn-sm" onclick="fetchAllDealsFromHubSpot()" title="Завантажити всі deals з HubSpot (звірка йде по deals)">
-                <i class="fas fa-sync-alt me-1"></i> Синхронізувати deals
-            </button>
-            {% endif %}
             <a href="{{ url_for('add_lead') }}" class="btn btn-primary btn-sm">
                 <i class="fas fa-user-plus me-1"></i> Додати лід
             </a>
