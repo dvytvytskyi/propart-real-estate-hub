@@ -3871,7 +3871,7 @@ def add_lead():
                                 deal_properties["email"] = form.email.data.strip()
                                 print(f"✅ Додано email до угоди: {form.email.data.strip()}")
                             
-                            print(f"✅ Використовуємо pipeline: default, stage: appointmentscheduled")
+                            print(f"✅ Використовуємо pipeline: 2341107958 (Лиды), stage: 3204738258 (Запрос получен)")
                             
                             # Додаємо hubspot_owner_id якщо знайдено
                             if hubspot_owner_id:
@@ -3894,11 +3894,31 @@ def add_lead():
                             db.session.commit()
                             app.logger.info(f"💾 HubSpot deal_id збережено в БД для ліда {lead.id}: {hubspot_deal_id}")
                             
+                            # ВАЖЛИВО: Явно встановлюємо стадію після створення deal, щоб гарантувати правильну стадію
+                            # Іноді HubSpot може ігнорувати dealstage при створенні, тому оновлюємо окремо
+                            try:
+                                from hubspot.crm.deals import SimplePublicObjectInput
+                                update_input = SimplePublicObjectInput(
+                                    properties={
+                                        "pipeline": "2341107958",  # Pipeline ID для "Лиды"
+                                        "dealstage": "3204738258"  # Стадія ID для "Запрос получен" (перша стадія)
+                                    }
+                                )
+                                hubspot_client.crm.deals.basic_api.update(
+                                    deal_id=hubspot_deal_id,
+                                    simple_public_object_input=update_input
+                                )
+                                app.logger.info(f"✅ Явно встановлено pipeline та dealstage для угоди {hubspot_deal_id}")
+                                print(f"✅ Явно встановлено pipeline та dealstage для угоди {hubspot_deal_id}")
+                            except Exception as update_stage_error:
+                                app.logger.warning(f"⚠️ Помилка явного встановлення стадії для угоди {hubspot_deal_id}: {update_stage_error}")
+                                print(f"⚠️ Помилка явного встановлення стадії: {update_stage_error}")
+                            
                             # Отримуємо створений deal з HubSpot, щоб встановити правильний статус та hubspot_stage_label
                             try:
                                 created_deal_full = hubspot_client.crm.deals.basic_api.get_by_id(
                                     deal_id=hubspot_deal_id,
-                                    properties=["dealstage"]
+                                    properties=["dealstage", "pipeline"]
                                 )
                                 
                                 if created_deal_full.properties and created_deal_full.properties.get('dealstage'):
