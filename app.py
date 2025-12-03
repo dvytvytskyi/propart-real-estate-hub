@@ -4193,8 +4193,9 @@ def get_lead_comments(lead_id):
         return jsonify({'success': False, 'message': 'У вас немає прав для перегляду цього ліда'}), 403
     
     try:
-        # Отримуємо всі коментарі для ліда (без ієрархії - просто список)
-        all_comments = Comment.query.filter_by(lead_id=lead_id).order_by(Comment.created_at.asc()).all()
+        # Отримуємо всі коментарі для ліда з eager loading для user relationship
+        from sqlalchemy.orm import joinedload
+        all_comments = Comment.query.options(joinedload(Comment.user)).filter_by(lead_id=lead_id).order_by(Comment.created_at.asc()).all()
         
         # Просто повертаємо список коментарів без ієрархії
         comments_list = [comment.to_dict() for comment in all_comments]
