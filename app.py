@@ -3853,14 +3853,13 @@ def add_lead():
                             selected_agent = User.query.get(selected_agent_id) if selected_agent_id else current_user
                             agent_username = selected_agent.username if selected_agent else current_user.username
                             
-                            # Використовуємо pipeline "2341107958" ("Лиды") з stage ID "3204738258" (Новая заявка)
-                            # Правильний ID стадії для "Новая заявка" в pipeline "Лиды"
+                            # Використовуємо pipeline "default" з stage "appointmentscheduled"
                             deal_properties = {
                                 "dealname": form.deal_name.data,
                                 "amount": get_budget_value(form.budget.data),
                                 "dealtype": "newbusiness",
-                                "pipeline": "2341107958",  # Pipeline ID для "Лиды"
-                                "dealstage": "3204738258",  # Стадія ID для "Новая заявка"
+                                "pipeline": "default",  # Pipeline ID для "default"
+                                "dealstage": "appointmentscheduled",  # Стадія для "default" pipeline
                                 "phone_number": formatted_phone,  # Додаємо номер телефону в угоду
                                 "from_agent_portal__name_": agent_username,  # Ім'я агента (обробника), який відповідає за лід
                                 # "responisble_agent": agent_username,  # Поле не існує в HubSpot, видалено
@@ -3871,7 +3870,7 @@ def add_lead():
                                 deal_properties["email"] = form.email.data.strip()
                                 print(f"✅ Додано email до угоди: {form.email.data.strip()}")
                             
-                            print(f"✅ Використовуємо pipeline: 2341107958 (Лиды), stage: 3204738258 (Запрос получен)")
+                            print(f"✅ Використовуємо pipeline: default, stage: appointmentscheduled")
                             
                             # Додаємо hubspot_owner_id якщо знайдено
                             if hubspot_owner_id:
@@ -3900,8 +3899,8 @@ def add_lead():
                                 from hubspot.crm.deals import SimplePublicObjectInput
                                 update_input = SimplePublicObjectInput(
                                     properties={
-                                        "pipeline": "2341107958",  # Pipeline ID для "Лиды"
-                                        "dealstage": "3204738258"  # Стадія ID для "Запрос получен" (перша стадія)
+                                        "pipeline": "default",  # Pipeline ID для "default"
+                                        "dealstage": "appointmentscheduled"  # Стадія для "default" pipeline
                                     }
                                 )
                                 hubspot_client.crm.deals.basic_api.update(
@@ -3929,26 +3928,26 @@ def add_lead():
                                     print(f"📊 Отримано з HubSpot: pipeline={pipeline_id}, dealstage={dealstage_id}")
                                     
                                     if dealstage_id:
-                                        # Маппінг стадій HubSpot на наші статуси
-                                        stage_mapping = {
+                                    # Маппінг стадій HubSpot на наші статуси
+                                    stage_mapping = {
                                             '3204738258': 'new',        # Запрос получен (перша стадія)
-                                            '3204738259': 'contacted',  # Контакт встановлено
-                                            '3204738261': 'qualified',  # Кваліфіковано
-                                            '3204738262': 'qualified',  # Встреча проведена
-                                            '3204738265': 'qualified',  # Переговоры
-                                            '3204738266': 'qualified',  # Задаток
-                                            '3204738267': 'closed'      # Сделка закрыта
-                                        }
-                                        
-                                        stage_labels = {
+                                        '3204738259': 'contacted',  # Контакт встановлено
+                                        '3204738261': 'qualified',  # Кваліфіковано
+                                        '3204738262': 'qualified',  # Встреча проведена
+                                        '3204738265': 'qualified',  # Переговоры
+                                        '3204738266': 'qualified',  # Задаток
+                                        '3204738267': 'closed'      # Сделка закрыта
+                                    }
+                                    
+                                    stage_labels = {
                                             '3204738258': 'Запрос получен',  # Правильна назва з HubSpot API
-                                            '3204738259': 'Отправлены варианты/Передан на партнеров',
-                                            '3204738261': 'Назначена встреча/тур',
-                                            '3204738262': 'Встреча/тур проведены',
-                                            '3204738265': 'Переговоры',
-                                            '3204738266': 'Задаток',
-                                            '3204738267': 'Сделка закрыта'
-                                        }
+                                        '3204738259': 'Отправлены варианты/Передан на партнеров',
+                                        '3204738261': 'Назначена встреча/тур',
+                                        '3204738262': 'Встреча/тур проведены',
+                                        '3204738265': 'Переговоры',
+                                        '3204738266': 'Задаток',
+                                        '3204738267': 'Сделка закрыта'
+                                    }
                                         
                                         # Встановлюємо статус та label
                                         if dealstage_id in stage_mapping:
