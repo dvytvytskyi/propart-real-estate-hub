@@ -3711,11 +3711,28 @@ def add_lead():
                 print(f"Budget: {form.budget.data}")
                 print(f"HubSpot client: {hubspot_client}")
                 
-                # ВИМКНЕНО: Створення контактів та асоціацій відключено
-                # Контакти більше не створюються і не асоціюються з deals
+                # ВИМКНЕНО: Створення контактів, deals та асоціацій відключено
+                # Контакти та deals більше не створюються
                 hubspot_contact_id = None
+                hubspot_deal_id = None
                 
+                # ВИМКНЕНО: Створення deals відключено
+                # Симулюємо помилку синхронізації для користувача
+                print(f"=== СТВОРЕННЯ УГОДИ В HUBSPOT ВИМКНЕНО ===")
+                print(f"⚠️ Створення угод в HubSpot тимчасово відключено")
+                app.logger.warning(f"⚠️ Створення HubSpot угоди для ліда {lead.id} відключено")
+                
+                # Встановлюємо помилку синхронізації
+                hubspot_sync_success = False
+                
+                # Старий код створення deals (закоментовано):
+                """
                 try:
+                    # Створюємо deal в HubSpot (без контактів)
+                    print(f"=== СТВОРЕННЯ УГОДИ В HUBSPOT ===")
+                    print(f"Створюємо угоду в HubSpot: {form.deal_name.data}")
+                    print(f"Контакт ID: {hubspot_contact_id}")
+                    try:
                     # Створюємо deal в HubSpot (без контактів)
                         print(f"=== СТВОРЕННЯ УГОДИ В HUBSPOT ===")
                         print(f"Створюємо угоду в HubSpot: {form.deal_name.data}")
@@ -3926,39 +3943,8 @@ def add_lead():
                     else:
                         hubspot_sync_success = False
                         print("⚠️ HubSpot синхронізація не виконана (контакт не створений)")
-                    
-                except Exception as hubspot_error:
-                    error_msg = str(hubspot_error)
-                    error_type = type(hubspot_error).__name__
-                    print(f"=== ДЕТАЛЬНА ПОМИЛКА HUBSPOT ===")
-                    print(f"Тип помилки: {error_type}")
-                    print(f"Повідомлення: {error_msg}")
-                    print(f"Email: {form.email.data}")
-                    print(f"Deal name: {form.deal_name.data}")
-                    print(f"Phone: {formatted_phone}")
-                    print(f"Budget: {form.budget.data}")
-                    traceback.print_exc()
-                    
-                    # Логуємо в файл з деталями
-                    app.logger.error(f"❌ HubSpot помилка при створенні ліда {lead.id}: {error_type}: {error_msg}")
-                    app.logger.error(f"   Деталі: email={form.email.data}, deal_name={form.deal_name.data}, phone={formatted_phone}")
-                    app.logger.error(f"   HubSpot client доступний: {hubspot_client is not None}")
-                    app.logger.error(f"   HUBSPOT_API_KEY встановлено: {HUBSPOT_API_KEY is not None}")
-                    
-                    # Логуємо помилку, але не блокуємо успішне створення ліда
-                    # Лід вже збережений в локальній БД, тому просто додаємо повідомлення
-                    if "Contact already exists" in error_msg or "409" in error_msg:
-                        flash(f'Лід додано локально. Контакт з email {form.email.data} вже існує в HubSpot.', 'warning')
-                    elif "401" in error_msg or "Unauthorized" in error_msg:
-                        flash('Лід додано локально. Помилка авторизації HubSpot API (недійсний ключ).', 'warning')
-                    elif "403" in error_msg or "Forbidden" in error_msg:
-                        flash('Лід додано локально. Немає прав доступу до HubSpot API.', 'warning')
-                    elif "429" in error_msg or "rate limit" in error_msg.lower():
-                        flash('Лід додано локально. Перевищено ліміт запитів до HubSpot API.', 'warning')
+                """
                     else:
-                        flash(f'Лід додано локально. Помилка HubSpot: {error_msg[:100]}...', 'warning')
-                    # Продовжуємо виконання - лід вже збережений, просто без HubSpot синхронізації
-            else:
                 app.logger.warning(f"⚠️ HubSpot клієнт не доступний! hubspot_client = {hubspot_client}, HUBSPOT_API_KEY = {'встановлено' if HUBSPOT_API_KEY else 'НЕ встановлено'}")
                 print("⚠️ HubSpot клієнт не налаштований, пропускаємо синхронізацію")
             
@@ -3977,8 +3963,8 @@ def add_lead():
                 flash('Лід успішно додано та синхронізовано з HubSpot!', 'success')
             else:
                 app.logger.info(f"🎉 УСПІХ! Лід #{lead.id} додано локально!")
-                app.logger.warning(f"⚠️ HubSpot синхронізація не виконана або часткова")
-                flash('Лід успішно додано локально!', 'success')
+                app.logger.warning(f"⚠️ HubSpot синхронізація не виконана")
+                flash('Лід успішно додано локально! Помилка синхронізації з HubSpot.', 'warning')
             
             app.logger.info("🔄 Перенаправлення на dashboard...")
             app.logger.info("=" * 80)
