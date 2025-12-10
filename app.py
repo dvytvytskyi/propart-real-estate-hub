@@ -3704,126 +3704,19 @@ def add_lead():
             
             if hubspot_client:
                 app.logger.info(f"✅ HubSpot клієнт доступний, починаємо синхронізацію...")
-                print(f"=== ПОЧАТОК СТВОРЕННЯ КОНТАКТУ В HUBSPOT ===")
+                print(f"=== СТВОРЕННЯ УГОДИ В HUBSPOT (БЕЗ КОНТАКТІВ) ===")
                 print(f"Email: {form.email.data}")
                 print(f"Deal name: {form.deal_name.data}")
                 print(f"Phone: {formatted_phone}")
                 print(f"Budget: {form.budget.data}")
                 print(f"HubSpot client: {hubspot_client}")
+                
+                # ВИМКНЕНО: Створення контактів та асоціацій відключено
+                # Контакти більше не створюються і не асоціюються з deals
+                hubspot_contact_id = None
+                
                 try:
-                    # Перевіряємо, чи існує контакт з таким email
-                    from hubspot.crm.contacts import SimplePublicObjectInput
-                    
-                    try:
-                        # Шукаємо існуючий контакт за email (якщо він вказаний)
-                        print(f"=== ПОШУК ІСНУЮЧОГО КОНТАКТУ ===")
-                        from hubspot.crm.contacts import PublicObjectSearchRequest
-                        
-                        existing_contacts = None
-                        if form.email.data and form.email.data.strip():
-                            print(f"Пошук за email: {form.email.data}")
-                            search_request = PublicObjectSearchRequest(
-                                query=form.email.data,
-                                properties=["email", "firstname", "lastname"],
-                                limit=1
-                            )
-                            existing_contacts = hubspot_client.crm.contacts.search_api.do_search(
-                                public_object_search_request=search_request
-                            )
-                            print(f"Пошук контакту за email {form.email.data}: знайдено {len(existing_contacts.results)} контактів")
-                            if existing_contacts.results:
-                                print(f"Знайдений контакт: ID={existing_contacts.results[0].id}, properties={existing_contacts.results[0].properties}")
-                        else:
-                            print(f"Email не вказано, створюємо контакт тільки з телефоном")
-                        
-                        if existing_contacts and existing_contacts.results:
-                            # Контакт існує, використовуємо його
-                            hubspot_contact_id = str(existing_contacts.results[0].id)
-                            print(f"Використовуємо існуючий HubSpot контакт: {hubspot_contact_id}")
-                        else:
-                            # Контакт не існує, створюємо новий
-                            print(f"=== СТВОРЕННЯ НОВОГО КОНТАКТУ ===")
-                            print(f"Контакт не знайдено, створюємо новий")
-                            contact_properties = {
-                                "phone": formatted_phone,
-                                "firstname": form.deal_name.data.split()[0] if form.deal_name.data.split() else "Lead",
-                                "lastname": " ".join(form.deal_name.data.split()[1:]) if len(form.deal_name.data.split()) > 1 else "Client"
-                            }
-                            
-                            # Додаємо email тільки якщо він заповнений
-                            if form.email.data and form.email.data.strip():
-                                contact_properties["email"] = form.email.data.strip()
-                            
-                            # Додаємо додаткові поля, якщо вони заповнені
-                            if request.form.get('second_phone', '').strip():
-                                contact_properties["phone_number_1"] = request.form.get('second_phone').strip()
-                            if request.form.get('company', '').strip():
-                                contact_properties["company"] = request.form.get('company').strip()
-                            if request.form.get('telegram_nickname', '').strip():
-                                contact_properties["telegram"] = request.form.get('telegram_nickname').strip()
-                            if request.form.get('messenger', '').strip():
-                                contact_properties["messenger"] = request.form.get('messenger').strip()
-                            if request.form.get('birth_date', '').strip():
-                                contact_properties["birthdate"] = request.form.get('birth_date').strip()
-                            
-                            contact_input = SimplePublicObjectInput(properties=contact_properties)
-                            hubspot_contact = hubspot_client.crm.contacts.basic_api.create(contact_input)
-                            hubspot_contact_id = str(hubspot_contact.id)
-                            print(f"HubSpot контакт створено: {hubspot_contact_id}")
-                            
-                    except Exception as search_error:
-                        print(f"=== ПОМИЛКА ПОШУКУ КОНТАКТУ ===")
-                        print(f"Помилка пошуку контакту: {search_error}")
-                        print(f"Тип помилки: {type(search_error).__name__}")
-                        print(f"Email: {form.email.data}")
-                        traceback.print_exc()
-                        # Якщо пошук не вдався, спробуємо створити контакт
-                        try:
-                            contact_properties = {
-                                "phone": formatted_phone,
-                                "firstname": form.deal_name.data.split()[0] if form.deal_name.data.split() else "Lead",
-                                "lastname": " ".join(form.deal_name.data.split()[1:]) if len(form.deal_name.data.split()) > 1 else "Client"
-                            }
-                            
-                            # Додаємо email тільки якщо він заповнений
-                            if form.email.data and form.email.data.strip():
-                                contact_properties["email"] = form.email.data.strip()
-                            
-                            # Додаємо додаткові поля, якщо вони заповнені
-                            if request.form.get('second_phone', '').strip():
-                                contact_properties["phone_number_1"] = request.form.get('second_phone').strip()
-                            if request.form.get('company', '').strip():
-                                contact_properties["company"] = request.form.get('company').strip()
-                            if request.form.get('telegram_nickname', '').strip():
-                                contact_properties["telegram"] = request.form.get('telegram_nickname').strip()
-                            if request.form.get('messenger', '').strip():
-                                contact_properties["messenger"] = request.form.get('messenger').strip()
-                            if request.form.get('birth_date', '').strip():
-                                contact_properties["birthdate"] = request.form.get('birth_date').strip()
-                            
-                            contact_input = SimplePublicObjectInput(properties=contact_properties)
-                            hubspot_contact = hubspot_client.crm.contacts.basic_api.create(contact_input)
-                            hubspot_contact_id = str(hubspot_contact.id)
-                            print(f"HubSpot контакт створено: {hubspot_contact_id}")
-                        except Exception as create_error:
-                            error_type = type(create_error).__name__
-                            error_msg = str(create_error)
-                            print(f"=== ПОМИЛКА СТВОРЕННЯ КОНТАКТУ ===")
-                            print(f"Помилка створення контакту: {create_error}")
-                            print(f"Тип помилки: {error_type}")
-                            print(f"Email: {form.email.data}")
-                            print(f"Phone: {formatted_phone}")
-                            traceback.print_exc()
-                            # Логуємо помилку, але продовжуємо роботу (лід вже збережений в БД)
-                            app.logger.error(f"❌ Помилка створення HubSpot контакту для ліда {lead.id}: {error_type}: {error_msg}")
-                            app.logger.error(f"   Деталі: email={form.email.data}, phone={formatted_phone}")
-                            # Перевіряємо, чи це проблема з мережею
-                            if "NameResolutionError" in error_type or "Failed to resolve" in error_msg:
-                                app.logger.error(f"   ⚠️ ПРОБЛЕМА З МЕРЕЖЕЮ/DNS: Не вдається вирішити 'api.hubapi.com'")
-                            # Не прокидаємо помилку далі - лід вже збережений локально
-                    
-                    # Створюємо deal в HubSpot (тільки якщо контакт створений)
-                    if hubspot_contact_id:
+                    # Створюємо deal в HubSpot (без контактів)
                         print(f"=== СТВОРЕННЯ УГОДИ В HUBSPOT ===")
                         print(f"Створюємо угоду в HubSpot: {form.deal_name.data}")
                         print(f"Контакт ID: {hubspot_contact_id}")
@@ -3929,7 +3822,7 @@ def add_lead():
                                     
                                     if dealstage_id:
                                         # Маппінг стадій HubSpot на наші статуси (для default pipeline та інших)
-                                        stage_mapping = {
+                                    stage_mapping = {
                                             'appointmentscheduled': 'new',  # Стадія для default pipeline
                                             '3204738245': 'contacted',      # Стадії для default pipeline
                                             '3204738246': 'qualified',
@@ -3943,28 +3836,28 @@ def add_lead():
                                             '3204738265': 'qualified',
                                             '3204738266': 'qualified',
                                             '3204738267': 'closed'
-                                        }
-                                        
-                                        stage_labels = {
+                                    }
+                                    
+                                    stage_labels = {
                                             'appointmentscheduled': 'appointmentscheduled',  # Стадія для default pipeline
                                             '3204738245': '3204738245',
                                             '3204738246': '3204738246',
                                             '3523602653': '3523602653',
                                             '3523660994': '3523660994',
                                             # Стадії для pipeline "Лиды"
-                                            '3204738258': 'Запрос получен',
-                                            '3204738259': 'Отправлены варианты/Передан на партнеров',
-                                            '3204738261': 'Назначена встреча/тур',
-                                            '3204738262': 'Встреча/тур проведены',
-                                            '3204738265': 'Переговоры',
-                                            '3204738266': 'Задаток',
-                                            '3204738267': 'Сделка закрыта'
-                                        }
-                                        
-                                        # Встановлюємо статус та label
-                                        if dealstage_id in stage_mapping:
-                                            lead.status = stage_mapping[dealstage_id]
-                                            print(f"✅ Встановлено статус з HubSpot: {lead.status}")
+                                        '3204738258': 'Запрос получен',
+                                        '3204738259': 'Отправлены варианты/Передан на партнеров',
+                                        '3204738261': 'Назначена встреча/тур',
+                                        '3204738262': 'Встреча/тур проведены',
+                                        '3204738265': 'Переговоры',
+                                        '3204738266': 'Задаток',
+                                        '3204738267': 'Сделка закрыта'
+                                    }
+                                    
+                                    # Встановлюємо статус та label
+                                    if dealstage_id in stage_mapping:
+                                        lead.status = stage_mapping[dealstage_id]
+                                        print(f"✅ Встановлено статус з HubSpot: {lead.status}")
                                         
                                         if dealstage_id in stage_labels:
                                             lead.hubspot_stage_label = stage_labels[dealstage_id]
@@ -4015,23 +3908,9 @@ def add_lead():
                                     print(f"⚠️ Помилка перевірки/оновлення email в угоді: {email_update_error}")
                                     app.logger.warning(f"⚠️ Помилка перевірки/оновлення email в угоді {hubspot_deal_id}: {email_update_error}")
                             
-                            # Створюємо зв'язок між контактом та угодою
-                            print(f"=== СТВОРЕННЯ ЗВ'ЯЗКУ КОНТАКТ-УГОДА ===")
-                            try:
-                                hubspot_client.crm.associations.basic_api.create(
-                                    from_object_type="contacts",
-                                    from_object_id=hubspot_contact_id,
-                                    to_object_type="deals", 
-                                    to_object_id=hubspot_deal_id,
-                                    association_type="contact_to_deal"
-                                )
-                                print(f"Зв'язок між контактом {hubspot_contact_id} та угодою {hubspot_deal_id} створено")
-                            except Exception as assoc_error:
-                                print(f"=== ПОМИЛКА СТВОРЕННЯ ЗВ'ЯЗКУ ===")
-                                print(f"Помилка створення зв'язку: {assoc_error}")
-                                print(f"Тип помилки: {type(assoc_error).__name__}")
-                                app.logger.warning(f"⚠️ Помилка створення зв'язку HubSpot: {assoc_error}")
-                                # Не критична помилка - продовжуємо
+                            # ВИМКНЕНО: Створення асоціацій між контактами та угодами відключено
+                            # print(f"=== СТВОРЕННЯ ЗВ'ЯЗКУ КОНТАКТ-УГОДА ===")
+                            # Асоціації більше не створюються
                         except Exception as deal_error:
                             error_type = type(deal_error).__name__
                             error_msg = str(deal_error)
@@ -4041,12 +3920,7 @@ def add_lead():
                             # Перевіряємо, чи це проблема з мережею
                             if "NameResolutionError" in error_type or "Failed to resolve" in error_msg:
                                 app.logger.error(f"   ⚠️ ПРОБЛЕМА З МЕРЕЖЕЮ/DNS: Не вдається вирішити 'api.hubapi.com'")
-                            # Не критична помилка - контакт вже створений, продовжуємо
-                    else:
-                        print("⚠️ HubSpot контакт не створений, пропускаємо створення угоди")
-                    
-                    # Визначаємо успішність синхронізації
-                    if hubspot_contact_id:
+                            # Не критична помилка - продовжуємо
                         hubspot_sync_success = True
                         print(f"✅ HubSpot синхронізація успішна! Contact: {hubspot_contact_id}, Deal: {hubspot_deal_id if hubspot_deal_id else 'не створено'}")
                     else:
@@ -4089,16 +3963,16 @@ def add_lead():
                 print("⚠️ HubSpot клієнт не налаштований, пропускаємо синхронізацію")
             
             # ⚡ ОПТИМІЗАЦІЯ: Оновлюємо лід з HubSpot ID, якщо синхронізація успішна
-            if hubspot_contact_id or hubspot_deal_id:
-                lead.hubspot_contact_id = hubspot_contact_id
+            # ВИМКНЕНО: hubspot_contact_id більше не зберігається
+            if hubspot_deal_id:
+                # lead.hubspot_contact_id = hubspot_contact_id  # ВИМКНЕНО
                 lead.hubspot_deal_id = hubspot_deal_id
                 db.session.commit()
-                print(f"Лід #{lead.id} оновлено з HubSpot ID: contact={hubspot_contact_id}, deal={hubspot_deal_id}")
+                print(f"Лід #{lead.id} оновлено з HubSpot Deal ID: {hubspot_deal_id}")
             
             # Повертаємо відповідь користувачу
-            if hubspot_sync_success and hubspot_contact_id:
+            if hubspot_sync_success and hubspot_deal_id:
                 app.logger.info(f"🎉 УСПІХ! Лід #{lead.id} додано локально та синхронізовано з HubSpot!")
-                app.logger.info(f"   HubSpot Contact ID: {hubspot_contact_id}")
                 app.logger.info(f"   HubSpot Deal ID: {hubspot_deal_id}")
                 flash('Лід успішно додано та синхронізовано з HubSpot!', 'success')
             else:

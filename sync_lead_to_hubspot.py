@@ -47,33 +47,12 @@ def sync_lead_to_hubspot(lead_id):
             return False
         
         try:
-            # Спочатку створюємо контакт (якщо його немає)
-            hubspot_contact_id = lead.hubspot_contact_id
+            # ВИМКНЕНО: Створення контактів відключено
+            # Контакти більше не створюються і не асоціюються з deals
+            hubspot_contact_id = None
+            print("⚠️ Створення контактів вимкнено - створюємо тільки deal")
             
-            if not hubspot_contact_id:
-                print("📝 Створення контакту в HubSpot...")
-                from hubspot.crm.contacts import SimplePublicObjectInput
-                
-                contact_properties = {
-                    "email": lead.email,
-                }
-                
-                if lead.phone:
-                    contact_properties["phone"] = lead.phone
-                
-                if lead.company:
-                    contact_properties["company"] = lead.company
-                
-                contact_input = SimplePublicObjectInput(properties=contact_properties)
-                hubspot_contact = hubspot_client.crm.contacts.basic_api.create(
-                    simple_public_object_input=contact_input
-                )
-                hubspot_contact_id = str(hubspot_contact.id)
-                print(f"✅ Контакт створено в HubSpot: {hubspot_contact_id}")
-            else:
-                print(f"✅ Контакт вже існує: {hubspot_contact_id}")
-            
-            # Тепер створюємо deal
+            # Створюємо deal
             print("📝 Створення deal в HubSpot...")
             
             # Отримуємо агента
@@ -121,38 +100,11 @@ def sync_lead_to_hubspot(lead_id):
             
             print(f"✅ Deal створено в HubSpot: {hubspot_deal_id}")
             
-            # Створюємо зв'язок між контактом та deal
-            if hubspot_contact_id:
-                try:
-                    hubspot_client.crm.associations.basic_api.create(
-                        from_object_type="contacts",
-                        from_object_id=hubspot_contact_id,
-                        to_object_type="deals",
-                        to_object_id=hubspot_deal_id,
-                        association_type="contact_to_deal"
-                    )
-                    print(f"✅ Зв'язок між контактом та deal створено")
-                except Exception as assoc_error:
-                    # Спробуємо альтернативний метод через v4 API
-                    try:
-                        import requests
-                        from app import HUBSPOT_API_KEY
-                        url = f"https://api.hubapi.com/crm/v4/objects/contacts/{hubspot_contact_id}/associations/deals/{hubspot_deal_id}"
-                        headers = {
-                            "Authorization": f"Bearer {HUBSPOT_API_KEY}",
-                            "Content-Type": "application/json"
-                        }
-                        response = requests.put(url, headers=headers, json={"associationCategory": "HUBSPOT_DEFINED", "associationTypeId": 3})
-                        if response.status_code in [200, 201]:
-                            print(f"✅ Зв'язок між контактом та deal створено (через v4 API)")
-                        else:
-                            print(f"⚠️ Помилка створення зв'язку через v4 API: {response.status_code} - {response.text}")
-                    except Exception as v4_error:
-                        print(f"⚠️ Помилка створення зв'язку: {assoc_error}, v4: {v4_error}")
-                        # Не критична помилка - контакт і deal вже створені
+            # ВИМКНЕНО: Створення асоціацій між контактами та deals відключено
+            # Асоціації більше не створюються
             
             # Оновлюємо лід
-            lead.hubspot_contact_id = hubspot_contact_id
+            # lead.hubspot_contact_id = hubspot_contact_id  # ВИМКНЕНО
             lead.hubspot_deal_id = hubspot_deal_id
             db.session.commit()
             
@@ -160,7 +112,6 @@ def sync_lead_to_hubspot(lead_id):
             print("=" * 80)
             print("✅ СИНХРОНІЗАЦІЯ ЗАВЕРШЕНА!")
             print("=" * 80)
-            print(f"hubspot_contact_id: {hubspot_contact_id}")
             print(f"hubspot_deal_id: {hubspot_deal_id}")
             print()
             print("💡 Тепер коментарі будуть синхронізуватися з HubSpot!")
