@@ -3940,7 +3940,7 @@ def add_lead():
                         print("⚠️ HubSpot синхронізація не виконана (контакт не створений)")
                 """
                     
-                    else:
+            else:
                 app.logger.warning(f"⚠️ HubSpot клієнт не доступний! hubspot_client = {hubspot_client}, HUBSPOT_API_KEY = {'встановлено' if HUBSPOT_API_KEY else 'НЕ встановлено'}")
                 print("⚠️ HubSpot клієнт не налаштований, пропускаємо синхронізацію")
             
