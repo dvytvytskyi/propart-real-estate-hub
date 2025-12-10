@@ -3729,11 +3729,6 @@ def add_lead():
                 """
                 try:
                     # Створюємо deal в HubSpot (без контактів)
-                    print(f"=== СТВОРЕННЯ УГОДИ В HUBSPOT ===")
-                    print(f"Створюємо угоду в HubSpot: {form.deal_name.data}")
-                    print(f"Контакт ID: {hubspot_contact_id}")
-                    try:
-                    # Створюємо deal в HubSpot (без контактів)
                         print(f"=== СТВОРЕННЯ УГОДИ В HUBSPOT ===")
                         print(f"Створюємо угоду в HubSpot: {form.deal_name.data}")
                         print(f"Контакт ID: {hubspot_contact_id}")
@@ -3944,6 +3939,7 @@ def add_lead():
                         hubspot_sync_success = False
                         print("⚠️ HubSpot синхронізація не виконана (контакт не створений)")
                 """
+                    
                     else:
                 app.logger.warning(f"⚠️ HubSpot клієнт не доступний! hubspot_client = {hubspot_client}, HUBSPOT_API_KEY = {'встановлено' if HUBSPOT_API_KEY else 'НЕ встановлено'}")
                 print("⚠️ HubSpot клієнт не налаштований, пропускаємо синхронізацію")
